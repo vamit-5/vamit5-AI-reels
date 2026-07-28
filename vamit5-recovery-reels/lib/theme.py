@@ -84,10 +84,10 @@ Vrati ISKLJUCIVO validan JSON, bez markdown ograda, u formatu:
 """
 
 
-def _anthropic_call(user_content: str) -> str:
+def _anthropic_call(user_content: str, max_tokens: int = 1500) -> str:
     body = json.dumps({
         "model": MODEL,
-        "max_tokens": 900,
+        "max_tokens": max_tokens,
         "system": SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_content}],
     }).encode("utf-8")
@@ -109,6 +109,20 @@ def _anthropic_call(user_content: str) -> str:
     return "".join(text_blocks)
 
 
+def _parse_json(raw: str) -> dict:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.startswith("json"):
+            raw = raw[4:]
+    raw = raw.strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1:
+        raw = raw[start:end + 1]
+    return json.loads(raw)
+
+
 def generate_episode(angle_slot: str, past_angles: list[dict]) -> dict:
     past_summary = "\n".join(
         f"- {a['angle']}" for a in past_angles
@@ -120,10 +134,12 @@ def generate_episode(angle_slot: str, past_angles: list[dict]) -> dict:
         "Napravi novu epizodu."
     )
 
-    raw = _anthropic_call(user_content)
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.strip("`")
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw)
+    last_err = None
+    for attempt in range(3):
+        raw = _anthropic_call(user_content, max_tokens=1500)
+        try:
+            return _parse_json(raw)
+        except json.JSONDecodeError as e:
+            last_err = e
+            continue
+    raise RuntimeError(f"Claude nije vratio validan JSON posle 3 pokusaja: {last_err}")
