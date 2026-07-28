@@ -50,6 +50,11 @@ def try_acquire() -> bool:
 
 
 def release_and_commit(extra_paths: list[str], message: str):
+    # STVARNO oslobodi katanac -- upisi "0" (slobodno) pre commit-a, inace
+    # sledece pokretanje misli da je katanac i dalje zauzet do isteka 25 min
+    with open(LOCK_PATH, "w") as f:
+        f.write("0")
+
     for attempt in range(5):
         _run(["git", "add", *extra_paths, "lock.txt"])
         _run(["git", "commit", "-m", message])
