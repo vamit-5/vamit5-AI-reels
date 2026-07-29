@@ -1,23 +1,31 @@
 """
 Sastavlja finalni Reels klip:
 1. Odredjuje trajanje audio naracije
-2. Ako je video kraci od audija -- petlja (loop) video da pokrije ceo audio
-   Ako je video duzi -- sece na duzinu audija
-3. Nalepljuje caption (donji deo kadra) preko Pillow-a kao providan PNG
-   (identican pristup kao u postojecoj automatizaciji, radi pouzdano i
-   za emoji i za nase ascii/latinicno pismo)
-4. Overlay PNG + audio spaja preko ffmpeg-a, skalira na max 1080px
-   (visina za 9:16 Reels format), izlaz H.264/AAC mp4
+2. Petlja/sece video da pokrije trajanje audija
+3. Nalepljuje SAMO hook (kratak, 1-2 recenice) kao providan PNG overlay,
+   pozicioniran ISPOD sredine kadra (ne preko celog videa), sa senkom i
+   konturom oko slova radi citljivosti umesto pune pozadinske trake
+4. Na poslednjih nekoliko sekundi (CTA momenat) prikazuje VAMIT-5 app
+   mockup sliku (transparentna, sa Cloudinary-ja) na sredini-dole kadra
+5. Overlay PNG-ovi + audio spajaju se preko ffmpeg-a u finalni mp4
 """
 import json
 import os
 import subprocess
+import urllib.request
 
 from PIL import Image, ImageDraw, ImageFont
 
 WIDTH, HEIGHT = 1080, 1920
 FONT_PATH = os.environ.get("CAPTION_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
 LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "vamit5_logo.png")
+
+MOCKUP_IMAGE_URL = (
+    "https://res.cloudinary.com/dqqljgtna/image/upload/v1778767942/"
+    "VAMIT-5-removebg-preview_2_uvii77.png"
+)
+MOCKUP_DISPLAY_SECONDS = 3.5
+MOCKUP_WIDTH = 620
 
 
 def _ffprobe_duration(path: str) -> float:
@@ -45,47 +53,58 @@ def _wrap_text(draw, text, font, max_width):
     return lines
 
 
-def _make_caption_overlay(caption_text: str, time_point_label: str, out_png: str):
+def _draw_text_with_shadow(draw, xy, text, font, fill=(255, 255, 255, 255)):
+    x, y = xy
+    for dx, dy in ((3, 3), (-2, 2), (2, -2), (-2, -2)):
+        draw.text((x + dx, y + dy), text, font=font, fill=(0, 0, 0, 200))
+    draw.text((x, y), text, font=font, fill=fill, stroke_width=3, stroke_fill=(0, 0, 0, 255))
+
+
+def _make_hook_overlay(hook_text: str, out_png: str):
+    """Samo kratak hook, pozicioniran ISPOD sredine kadra, bez pune pozadine."""
     img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    label_font = ImageFont.truetype(FONT_PATH, 54)
-    body_font = ImageFont.truetype(FONT_PATH, 46)
+    font = ImageFont.truetype(FONT_PATH, 58)
+    max_width = WIDTH - 140
+    lines = _wrap_text(draw, hook_text.upper(), font, max_width)
 
-    # gornja traka - HOOK (VAMIT-5 vojno-zelena), wrap na vise linija po potrebi
-    hook_lines = _wrap_text(draw, time_point_label.upper(), label_font, WIDTH - 100)
-    hook_line_height = 66
-    hook_block_height = hook_line_height * len(hook_lines) + 40
-    draw.rectangle([(0, 90), (WIDTH, 90 + hook_block_height)], fill=(20, 20, 20, 190))
-    y = 90 + 20
-    for line in hook_lines:
-        lw = draw.textlength(line, font=label_font)
-        draw.text(((WIDTH - lw) / 2, y), line, font=label_font, fill=(120, 200, 120, 255))
-        y += hook_line_height
+    line_height = 70
+    block_height = line_height * len(lines)
+    top = int(HEIGHT * 0.58)
 
-    # donji caption, wrap na vise linija, sa tamnom pozadinom za citljivost
-    lines = _wrap_text(draw, caption_text, body_font, WIDTH - 140)
-    line_height = 62
-    block_height = line_height * len(lines) + 60
-    top = HEIGHT - block_height - 260
-    draw.rectangle([(0, top - 30), (WIDTH, top + block_height)], fill=(0, 0, 0, 170))
     y = top
     for line in lines:
-        lw = draw.textlength(line, font=body_font)
-        draw.text(((WIDTH - lw) / 2, y), line, font=body_font, fill=(255, 255, 255, 255))
+        lw = draw.textlength(line, font=font)
+        _draw_text_with_shadow(draw, ((WIDTH - lw) / 2, y), line, font, fill=(150, 230, 150, 255))
         y += line_height
 
-    if os.path.exists(LOGO_PATH):
-        logo = Image.open(LOGO_PATH).convert("RGBA")
-        logo.thumbnail((260, 260))
-        img.alpha_composite(logo, (WIDTH - logo.width - 40, HEIGHT - logo.height - 60))
-
     img.save(out_png)
-    return out_png
+    return out_png, top + block_height
 
 
-def assemble(raw_video_path: str, audio_path: str, caption_text: str,
-             time_point_label: str, out_path: str, tmp_dir: str) -> str:
+def _fetch_mockup(tmp_dir: str) -> str | None:
+    try:
+        req = urllib.request.Request(
+            MOCKUP_IMAGE_URL,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        raw_path = os.path.join(tmp_dir, "mockup_raw.png")
+        with urllib.request.urlopen(req, timeout=30) as resp, open(raw_path, "wb") as f:
+            f.write(resp.read())
+
+        img = Image.open(raw_path).convert("RGBA")
+        ratio = MOCKUP_WIDTH / img.width
+        img = img.resize((MOCKUP_WIDTH, int(img.height * ratio)))
+        resized_path = os.path.join(tmp_dir, "mockup.png")
+        img.save(resized_path)
+        return resized_path
+    except Exception:
+        return None
+
+
+def assemble(raw_video_path: str, audio_path: str, hook_text: str,
+             out_path: str, tmp_dir: str) -> str:
     audio_dur = _ffprobe_duration(audio_path)
     video_dur = _ffprobe_duration(raw_video_path)
 
@@ -98,24 +117,34 @@ def assemble(raw_video_path: str, audio_path: str, caption_text: str,
         check=True, capture_output=True,
     )
 
-    overlay_png = os.path.join(tmp_dir, "overlay.png")
-    _make_caption_overlay(caption_text, time_point_label, overlay_png)
+    hook_png, _ = _make_hook_overlay(hook_text, os.path.join(tmp_dir, "hook.png"))
+    mockup_path = _fetch_mockup(tmp_dir)
 
-    subprocess.run(
-        [
-            "ffmpeg", "-y",
-            "-i", looped_video,
-            "-i", overlay_png,
-            "-i", audio_path,
-            "-filter_complex",
-            f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-            f"crop={WIDTH}:{HEIGHT}[base];[base][1:v]overlay=0:0[outv]",
-            "-map", "[outv]", "-map", "2:a",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-c:a", "aac", "-b:a", "160k",
-            "-shortest",
-            out_path,
-        ],
-        check=True, capture_output=True,
+    inputs = ["-i", looped_video, "-i", hook_png]
+    if mockup_path:
+        inputs += ["-i", mockup_path]
+    inputs += ["-i", audio_path]
+    audio_input_index = 3 if mockup_path else 2
+
+    base_scale = (
+        f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
+        f"crop={WIDTH}:{HEIGHT}[base];[base][1:v]overlay=0:0[with_hook]"
     )
+
+    if mockup_path:
+        mockup_start = max(0.0, audio_dur - MOCKUP_DISPLAY_SECONDS)
+        mockup_y = int(HEIGHT * 0.70)
+        filter_complex = (
+            f"{base_scale};"
+            f"[with_hook][2:v]overlay=(main_w-overlay_w)/2:{mockup_y}:"
+            f"enable='gte(t,{mockup_start})'[outv]"
+        )
+    else:
+        filter_complex = f"{base_scale.replace('[with_hook]', '[outv]')}"
+
+    cmd = ["ffmpeg", "-y", *inputs, "-filter_complex", filter_complex,
+           "-map", "[outv]", "-map", f"{audio_input_index}:a",
+           "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+           "-c:a", "aac", "-b:a", "160k", "-shortest", out_path]
+    subprocess.run(cmd, check=True, capture_output=True)
     return out_path
