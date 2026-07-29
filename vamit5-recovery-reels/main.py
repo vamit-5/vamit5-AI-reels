@@ -68,7 +68,9 @@ def main():
             tts.synthesize(episode["narration_serbian"], audio_path)
 
             raw_video_path = os.path.join(tmp, "raw.mp4")
-            video.generate_video(episode["video_prompt_english"], raw_video_path)
+            video.generate_episode_video(
+                episode["video_prompt_english"], episode["video_prompt_english"], raw_video_path
+            )
 
             final_path = os.path.join(tmp, "final.mp4")
             assemble.assemble(
@@ -95,7 +97,6 @@ def main():
 
     except Exception:
         traceback.print_exc()
-        # cak i kod greske, oslobodi lock da sledece pokretanje ne bude blokirano
         lock.release_and_commit([], "chore: release lock posle greske")
         sys.exit(1)
 
