@@ -1,16 +1,16 @@
 """
-Sastavlja finalni Reels klip:
-1. Odredjuje trajanje audio naracije
-2. Petlja/sece video da pokrije trajanje audija
-3. Nalepljuje SAMO hook (kratak, 1-2 recenice) kao providan PNG overlay,
-   pozicioniran ISPOD sredine kadra (ne preko celog videa), sa senkom i
-   konturom oko slova radi citljivosti umesto pune pozadinske trake
-4. Na poslednjih nekoliko sekundi (CTA momenat) prikazuje VAMIT-5 app
-   mockup sliku (transparentna, sa Cloudinary-ja) na sredini-dole kadra
-5. Overlay PNG-ovi + audio spajaju se preko ffmpeg-a u finalni mp4
+Sastavlja finalni Reels klip od STVARNOG snimka (sa Google Drive-a):
+1. Petlja/sece video da pokrije trajanje audio naracije
+2. Skida original zvuk sa videa, mesa TTS glas (pun volumen) + pozadinsku
+   muziku (15-20% jacine), obe petljane po potrebi
+3. Nalepljuje hook caption dizajn (tamna providna pozadina, zeleni okvir,
+   istaknuta rec/fraza sa zelenom pozadinom) -- kopija dogovorenog stila
+4. Poslednjih ~6 sekundi (CTA) prikazuje app mockup sliku
+5. Tokom celog videa, mali stalni VAMIT-5 logo u uglu
 """
 import json
 import os
+import random
 import subprocess
 import urllib.request
 
@@ -18,14 +18,17 @@ from PIL import Image, ImageDraw, ImageFont
 
 WIDTH, HEIGHT = 1080, 1920
 FONT_PATH = os.environ.get("CAPTION_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
-LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "vamit5_logo.png")
 
-MOCKUP_IMAGE_URL = (
-    "https://res.cloudinary.com/dqqljgtna/image/upload/v1778767942/"
-    "VAMIT-5-removebg-preview_2_uvii77.png"
-)
-MOCKUP_DISPLAY_SECONDS = 3.5
-MOCKUP_WIDTH = 620
+MOCKUP_IMAGE_URL = "https://res.cloudinary.com/dnbjvccgy/image/upload/v1777657561/image00003_p86fm6.png"
+LOGO_IMAGE_URL = "https://res.cloudinary.com/dqqljgtna/image/upload/v1778767942/VAMIT-5-removebg-preview_2_uvii77.png"
+
+MOCKUP_DISPLAY_SECONDS = 6.0
+MOCKUP_WIDTH = 640
+LOGO_WIDTH = 150
+MUSIC_VOLUME = 0.18  # 18% jacine, u okviru trazenih 15-20%
+
+GREEN = (120, 220, 120, 255)
+GREEN_FILL = (60, 170, 90, 235)
 
 
 def _ffprobe_duration(path: str) -> float:
@@ -37,70 +40,112 @@ def _ffprobe_duration(path: str) -> float:
     return float(json.loads(out.stdout)["format"]["duration"])
 
 
-def _wrap_text(draw, text, font, max_width):
+def _fetch_image(url: str, out_path: str, target_width: int) -> str | None:
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp, open(out_path, "wb") as f:
+            f.write(resp.read())
+        img = Image.open(out_path).convert("RGBA")
+        ratio = target_width / img.width
+        img = img.resize((target_width, int(img.height * ratio)))
+        img.save(out_path)
+        return out_path
+    except Exception:
+        return None
+
+
+def _find_highlight(text: str):
+    """Nadji frazu koju treba istaci zelenom pozadinom -- 'VAMIT-5' ako
+    postoji u hook tekstu, inace poslednja rec."""
+    upper = text.upper()
+    if "VAMIT-5" in upper:
+        start = upper.index("VAMIT-5")
+        return text[start:start + len("VAMIT-5")]
     words = text.split()
-    lines, current = [], ""
-    for w in words:
-        trial = (current + " " + w).strip()
-        if draw.textlength(trial, font=font) <= max_width:
-            current = trial
-        else:
-            if current:
-                lines.append(current)
-            current = w
-    if current:
-        lines.append(current)
-    return lines
-
-
-def _draw_text_with_shadow(draw, xy, text, font, fill=(255, 255, 255, 255)):
-    x, y = xy
-    for dx, dy in ((3, 3), (-2, 2), (2, -2), (-2, -2)):
-        draw.text((x + dx, y + dy), text, font=font, fill=(0, 0, 0, 200))
-    draw.text((x, y), text, font=font, fill=fill, stroke_width=3, stroke_fill=(0, 0, 0, 255))
+    return words[-1] if words else ""
 
 
 def _make_hook_overlay(hook_text: str, out_png: str):
-    """Samo kratak hook, pozicioniran ISPOD sredine kadra, bez pune pozadine."""
+    hook_text = hook_text.upper().rstrip(".!?")
+    highlight = _find_highlight(hook_text).upper()
+
     img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
+    font = ImageFont.truetype(FONT_PATH, 56)
 
-    font = ImageFont.truetype(FONT_PATH, 58)
-    max_width = WIDTH - 140
-    lines = _wrap_text(draw, hook_text.upper(), font, max_width)
+    # razbij tekst na reci, oznaci koje reci pripadaju highlight frazi
+    words = hook_text.split()
+    highlight_words = highlight.split() if highlight else []
 
-    line_height = 70
-    block_height = line_height * len(lines)
-    top = int(HEIGHT * 0.58)
+    def is_highlight_start(i):
+        if not highlight_words:
+            return False
+        return words[i:i + len(highlight_words)] == highlight_words
 
-    y = top
+    space_w = draw.textlength(" ", font=font)
+    max_line_width = WIDTH - 220
+
+    # slaganje reci u linije
+    lines, current_line, current_w = [], [], 0
+    i = 0
+    while i < len(words):
+        if is_highlight_start(i):
+            chunk = words[i:i + len(highlight_words)]
+            chunk_text = " ".join(chunk)
+            chunk_w = draw.textlength(chunk_text, font=font)
+            if current_w + chunk_w > max_line_width and current_line:
+                lines.append(current_line)
+                current_line, current_w = [], 0
+            current_line.append(("HL", chunk_text, chunk_w))
+            current_w += chunk_w + space_w
+            i += len(highlight_words)
+        else:
+            w = words[i]
+            w_width = draw.textlength(w, font=font)
+            if current_w + w_width > max_line_width and current_line:
+                lines.append(current_line)
+                current_line, current_w = [], 0
+            current_line.append(("TXT", w, w_width))
+            current_w += w_width + space_w
+            i += 1
+    if current_line:
+        lines.append(current_line)
+
+    line_height = 78
+    pad_x, pad_y = 50, 40
+    block_h = line_height * len(lines) + pad_y * 2
+    block_w = min(WIDTH - 100, max(
+        sum(w for _, _, w in line) + space_w * (len(line) - 1) for line in lines
+    ) + pad_x * 2)
+
+    top = int(HEIGHT * 0.36)
+    left = (WIDTH - block_w) // 2
+
+    # pozadinska providna tamna kutija sa zelenim okvirom (zaobljeni uglovi)
+    draw.rounded_rectangle(
+        [left, top, left + block_w, top + block_h],
+        radius=32, fill=(15, 15, 15, 195), outline=GREEN, width=5,
+    )
+
+    y = top + pad_y
     for line in lines:
-        lw = draw.textlength(line, font=font)
-        _draw_text_with_shadow(draw, ((WIDTH - lw) / 2, y), line, font, fill=(150, 230, 150, 255))
+        line_w = sum(w for _, _, w in line) + space_w * (len(line) - 1)
+        x = left + (block_w - line_w) / 2
+        for kind, text, w in line:
+            if kind == "HL":
+                draw.rounded_rectangle(
+                    [x - 10, y - 6, x + w + 10, y + line_height - 20],
+                    radius=14, fill=GREEN_FILL,
+                )
+                draw.text((x, y), text, font=font, fill=(10, 10, 10, 255))
+            else:
+                draw.text((x, y), text, font=font, fill=(255, 255, 255, 255),
+                          stroke_width=2, stroke_fill=(0, 0, 0, 255))
+            x += w + space_w
         y += line_height
 
     img.save(out_png)
-    return out_png, top + block_height
-
-
-def _fetch_mockup(tmp_dir: str) -> str | None:
-    try:
-        req = urllib.request.Request(
-            MOCKUP_IMAGE_URL,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        raw_path = os.path.join(tmp_dir, "mockup_raw.png")
-        with urllib.request.urlopen(req, timeout=30) as resp, open(raw_path, "wb") as f:
-            f.write(resp.read())
-
-        img = Image.open(raw_path).convert("RGBA")
-        ratio = MOCKUP_WIDTH / img.width
-        img = img.resize((MOCKUP_WIDTH, int(img.height * ratio)))
-        resized_path = os.path.join(tmp_dir, "mockup.png")
-        img.save(resized_path)
-        return resized_path
-    except Exception:
-        return None
+    return out_png
 
 
 def assemble(raw_video_path: str, audio_path: str, hook_text: str,
@@ -117,34 +162,82 @@ def assemble(raw_video_path: str, audio_path: str, hook_text: str,
         check=True, capture_output=True,
     )
 
-    hook_png, _ = _make_hook_overlay(hook_text, os.path.join(tmp_dir, "hook.png"))
-    mockup_path = _fetch_mockup(tmp_dir)
+    hook_png = _make_hook_overlay(hook_text, os.path.join(tmp_dir, "hook.png"))
+    mockup_path = _fetch_image(MOCKUP_IMAGE_URL, os.path.join(tmp_dir, "mockup.png"), MOCKUP_WIDTH)
+    logo_path = _fetch_image(LOGO_IMAGE_URL, os.path.join(tmp_dir, "logo.png"), LOGO_WIDTH)
+
+    # muzika: nasumican mp3 iz Drive foldera, vec preuzet spolja u
+    # main.py kao tmp_dir/music_raw.mp3 -- ovde ga petljamo do pune
+    # duzine audio naracije (kao i video)
+    music_raw_path = os.path.join(tmp_dir, "music_raw.mp3")
+    has_music = os.path.exists(music_raw_path)
+    music_path = None
+    if has_music:
+        music_dur = _ffprobe_duration(music_raw_path)
+        music_loops = max(1, int(audio_dur // music_dur) + 1)
+        music_path = os.path.join(tmp_dir, "music_looped.m4a")
+        subprocess.run(
+            ["ffmpeg", "-y", "-stream_loop", str(music_loops - 1), "-i", music_raw_path,
+             "-t", str(audio_dur + 0.5), "-c:a", "aac", "-b:a", "192k", music_path],
+            check=True, capture_output=True,
+        )
 
     inputs = ["-i", looped_video, "-i", hook_png]
+    idx = 2
+    logo_idx = mockup_idx = music_idx = None
+    if logo_path:
+        inputs += ["-i", logo_path]
+        logo_idx = idx
+        idx += 1
     if mockup_path:
         inputs += ["-i", mockup_path]
+        mockup_idx = idx
+        idx += 1
     inputs += ["-i", audio_path]
-    audio_input_index = 3 if mockup_path else 2
+    voice_idx = idx
+    idx += 1
+    if has_music:
+        inputs += ["-i", music_path]
+        music_idx = idx
+        idx += 1
 
-    base_scale = (
+    filter_parts = [
         f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
-        f"crop={WIDTH}:{HEIGHT}[base];[base][1:v]overlay=0:0[with_hook]"
-    )
-
-    if mockup_path:
+        f"crop={WIDTH}:{HEIGHT}[base]",
+        "[base][1:v]overlay=0:0[v1]",
+    ]
+    last_v = "v1"
+    if logo_idx is not None:
+        filter_parts.append(f"[{last_v}][{logo_idx}:v]overlay=W-w-30:40[v2]")
+        last_v = "v2"
+    if mockup_idx is not None:
         mockup_start = max(0.0, audio_dur - MOCKUP_DISPLAY_SECONDS)
-        mockup_y = int(HEIGHT * 0.70)
-        filter_complex = (
-            f"{base_scale};"
-            f"[with_hook][2:v]overlay=(main_w-overlay_w)/2:{mockup_y}:"
-            f"enable='gte(t,{mockup_start})'[outv]"
+        mockup_y = int(HEIGHT * 0.72)
+        filter_parts.append(
+            f"[{last_v}][{mockup_idx}:v]overlay=(main_w-overlay_w)/2:{mockup_y}:"
+            f"enable='gte(t,{mockup_start})'[vout]"
         )
+        last_v = "vout"
     else:
-        filter_complex = f"{base_scale.replace('[with_hook]', '[outv]')}"
+        filter_parts.append(f"[{last_v}]null[vout]")
+        last_v = "vout"
+
+    if has_music:
+        filter_parts.append(
+            f"[{music_idx}:a]volume={MUSIC_VOLUME}[music_low]"
+        )
+        filter_parts.append(
+            f"[{voice_idx}:a][music_low]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+        )
+        audio_map = "[aout]"
+    else:
+        audio_map = f"{voice_idx}:a"
+
+    filter_complex = ";".join(filter_parts)
 
     cmd = ["ffmpeg", "-y", *inputs, "-filter_complex", filter_complex,
-           "-map", "[outv]", "-map", f"{audio_input_index}:a",
+           "-map", f"[{last_v}]", "-map", audio_map,
            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-           "-c:a", "aac", "-b:a", "160k", "-shortest", out_path]
+           "-c:a", "aac", "-b:a", "160k", "-t", str(audio_dur), out_path]
     subprocess.run(cmd, check=True, capture_output=True)
     return out_path
