@@ -79,6 +79,12 @@ PRAVILA:
   pa kratak CTA na kraju (npr. poziv da probaju VAMIT-5 trening/app).
 - Nikad ne ponavljaj doslovno hook ili ugao iz prethodnih epizoda za isti slot
   (dobices listu prethodnih hookova -- moras NOV hook i NOV ugao).
+- KRITICNO ZA FORMAT: ako u tekstu navodis/isticas neku rec ili frazu (npr.
+  naziv faze ili pokreta), NIKAD ne koristi dvostruke navodnike (") oko nje
+  jer to kvari JSON strukturu. Umesto toga koristi APOSTROFE (') ili ih
+  jednostavno istakni bez navodnika, npr: napisi flow umesto "flow", ili
+  napisi 'flow' sa apostrofima. Ovo pravilo je APSOLUTNO -- dvostruki navodnik
+  sme da se pojavi ISKLJUCIVO kao granica JSON stringa, nigde unutar teksta.
 - Video prompt (na engleskom, za AI video generator): opisuje muskularnog,
   atletski gradjenog covjeka (dark athletic warrior aesthetic, military green
   accents, dramatic cinematic lighting) kako izvodi KONKRETAN VAMIT-5 pokret iz
@@ -151,11 +157,11 @@ def generate_episode(angle_slot: str, past_angles: list[dict]) -> dict:
     )
 
     last_err = None
-    for attempt in range(3):
+    for attempt in range(5):
         raw = _anthropic_call(user_content, max_tokens=2500)
         try:
             return _parse_json(raw)
         except json.JSONDecodeError as e:
             last_err = e
             continue
-    raise RuntimeError(f"Claude nije vratio validan JSON posle 3 pokusaja: {last_err}")
+    raise RuntimeError(f"Claude nije vratio validan JSON posle 5 pokusaja: {last_err}")
