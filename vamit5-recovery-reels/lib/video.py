@@ -4,8 +4,6 @@ Dvokorakno generisanje video epizode preko Higgsfield Cloud API-ja:
 2. Higgsfield DoP Lite (image-to-video) animira tu sliku u kratak pokret
 
 Auth: dva odvojena header-a "hf-api-key" i "hf-secret".
-Odgovori imaju ugnjezdenu strukturu: {"id":..., "jobs":[{"id":..., "status":...,
-"results": [...]}]} -- status endpoint trazi SPOLJNI "id", ne jobs[0]["id"].
 """
 import json
 import os
@@ -91,20 +89,23 @@ def _wait_for_job(submit_response):
 
 
 def _extract_url_from_job(job):
-    results = job.get("results")
-    if isinstance(results, list) and results:
-        first = results[0]
-        if isinstance(first, str) and first.startswith("http"):
-            return first
-        if isinstance(first, dict):
+    # Higgsfield koristi razlicita imena polja zavisno od endpointa/faze:
+    # "results", "images", "videos", ili direktno "url" -- probaj sve
+    for list_key in ("results", "images", "videos"):
+        items = job.get(list_key)
+        if isinstance(items, list) and items:
+            first = items[0]
+            if isinstance(first, str) and first.startswith("http"):
+                return first
+            if isinstance(first, dict):
+                for key in ("url", "image_url", "video_url"):
+                    if isinstance(first.get(key), str):
+                        return first[key]
+        if isinstance(items, dict):
             for key in ("url", "image_url", "video_url"):
-                if isinstance(first.get(key), str):
-                    return first[key]
-    if isinstance(results, dict):
-        for key in ("url", "image_url", "video_url"):
-            if isinstance(results.get(key), str):
-                return results[key]
-    for key in ("url", "output_url"):
+                if isinstance(items.get(key), str):
+                    return items[key]
+    for key in ("url", "output_url", "video_url", "image_url"):
         if isinstance(job.get(key), str):
             return job[key]
     raise RuntimeError(f"Nisam nasao URL rezultata u zavrsenom poslu: {job}")
