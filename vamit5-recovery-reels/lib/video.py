@@ -67,12 +67,16 @@ def _wait_for_job(submit_response):
     if job.get("status") == "completed":
         return job
 
-    # bitno: status endpoint trazi SPOLJNI "request" id (submit_response["id"]),
-    # NE unutrasnji jobs[0]["id"] -- to su dva razlicita ID-ja
-    request_id = submit_response.get("id")
-    if not request_id:
-        raise RuntimeError(f"Nema request_id u Higgsfield odgovoru: {submit_response}")
-    status_url = STATUS_URL_TMPL.format(request_id=request_id)
+    # Higgsfield koristi razlicita imena polja na razlicitim endpoint-ima
+    # (Soul vraca "id", DoP Lite vraca "request_id") -- zato prvo probamo
+    # da uzmemo "status_url" direktno (uvek prisutan, najpouzdaniji nacin),
+    # a tek ako ga nema, sastavljamo URL rucno iz id/request_id polja
+    status_url = submit_response.get("status_url")
+    if not status_url:
+        request_id = submit_response.get("id") or submit_response.get("request_id")
+        if not request_id:
+            raise RuntimeError(f"Nema request_id/status_url u Higgsfield odgovoru: {submit_response}")
+        status_url = STATUS_URL_TMPL.format(request_id=request_id)
 
     deadline = time.time() + MAX_POLL_MINUTES * 60
     while time.time() < deadline:
