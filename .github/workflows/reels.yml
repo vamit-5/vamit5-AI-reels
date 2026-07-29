@@ -2,9 +2,21 @@ name: VAMIT-5 Recovery Reels
 
 on:
   schedule:
-    # GitHub-ov cron nije 100% pouzdan (kasni pod opterecenjem), zato
-    # kombinujemo i sa cron-job.org "budilnikom" koji zove workflow_dispatch
+    # 10 termina dnevno, razmaknuti ~90 min (u UTC vremenu). Ovo odgovara
+    # priblizno 08:00-21:30 po srpskom letnjem vremenu (UTC+2). GitHub-ov
+    # cron nije 100% pouzdan (kasni pod opterecenjem), zato je dobro imati
+    # i cron-job.org "budilnik" koji dodatno zove workflow_dispatch --
+    # lock.py sistem sprecava duple objave ako se poklope
+    - cron: "0 6 * * *"
+    - cron: "30 7 * * *"
+    - cron: "0 9 * * *"
+    - cron: "30 10 * * *"
+    - cron: "0 12 * * *"
+    - cron: "30 13 * * *"
+    - cron: "0 15 * * *"
+    - cron: "30 16 * * *"
     - cron: "0 18 * * *"
+    - cron: "30 19 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -43,5 +55,5 @@ jobs:
           IG_BUSINESS_ACCOUNT_ID: ${{ secrets.IG_BUSINESS_ACCOUNT_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
-          ALLOWED_UTC_HOUR_WINDOWS: "17-19"
+          ALLOWED_UTC_HOUR_WINDOWS: ""  # prazno = uvek dozvoljeno, tacno vreme kontrolisu cron termini iznad
         run: python main.py
