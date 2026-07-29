@@ -100,7 +100,7 @@ Vrati ISKLJUCIVO validan JSON, bez markdown ograda, u formatu:
 """
 
 
-def _anthropic_call(user_content: str, max_tokens: int = 1500) -> str:
+def _anthropic_call(user_content: str, max_tokens: int = 2500) -> str:
     body = json.dumps({
         "model": MODEL,
         "max_tokens": max_tokens,
@@ -152,7 +152,7 @@ def generate_episode(angle_slot: str, past_angles: list[dict]) -> dict:
 
     last_err = None
     for attempt in range(3):
-        raw = _anthropic_call(user_content, max_tokens=1500)
+        raw = _anthropic_call(user_content, max_tokens=2500)
         try:
             return _parse_json(raw)
         except json.JSONDecodeError as e:
