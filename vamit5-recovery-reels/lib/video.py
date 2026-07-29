@@ -38,6 +38,12 @@ def _request(method, url, payload=None):
         headers={
             "Authorization": AUTH_HEADER,
             "content-type": "application/json",
+            "accept": "application/json",
+            # Cloudflare (koji stoji ispred Higgsfield API-ja) cesto blokira
+            # podrazumevani "Python-urllib" User-Agent kao bota (error code
+            # 1010) -- predstavljamo se kao obican browser da to zaobidjemo
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         },
         method=method,
     )
