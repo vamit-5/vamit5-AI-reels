@@ -3,10 +3,12 @@ Sastavlja finalni Reels klip od STVARNOG snimka (sa Google Drive-a):
 1. Petlja/sece video da pokrije trajanje audio naracije
 2. Skida original zvuk sa videa, mesa TTS glas (pun volumen) + pozadinsku
    muziku (15-20% jacine), obe petljane po potrebi
-3. Nalepljuje hook caption dizajn (tamna providna pozadina, zeleni okvir,
-   istaknuta rec/fraza sa zelenom pozadinom) -- kopija dogovorenog stila
+3. Deli celu naraciju na recenice i pravi PO JEDAN caption overlay za svaku,
+   sa vremenskim prozorom srazmernim duzini recenice -- caption PRATI govor
+   kroz ceo video, ne stoji zamrznut na jednom hook-u
 4. Poslednjih ~6 sekundi (CTA) prikazuje app mockup sliku
-5. Tokom celog videa, mali stalni VAMIT-5 logo u uglu
+5. Centriran, u donjem delu (ne na samom dnu) stalni VAMIT-5 logo, sakriven
+   tokom CTA mockup slike da se ne preklapaju
 """
 import json
 import os
@@ -19,7 +21,7 @@ from PIL import Image, ImageDraw, ImageFont
 WIDTH, HEIGHT = 1080, 1920
 FONT_PATH = os.environ.get("CAPTION_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
 
-MOCKUP_IMAGE_URL = "https://res.cloudinary.com/dnbjvccgy/image/upload/v1777657561/image00003_p86fm6.png"
+MOCKUP_IMAGE_URL = "https://res.cloudinary.com/dnbjvccgy/image/upload/v1785345583/IMG_0599_lkdady.png"
 LOGO_IMAGE_URL = "https://res.cloudinary.com/dqqljgtna/image/upload/v1778767942/VAMIT-5-removebg-preview_2_uvii77.png"
 
 MOCKUP_DISPLAY_SECONDS = 6.0
@@ -67,19 +69,24 @@ def _find_highlight(text: str):
     return words[-1] if words else ""
 
 
-HOOK_DISPLAY_SECONDS = 6.0  # hook se vidi samo prvih par sekundi, ne ceo video
+import re
 
 
-def _make_hook_overlay(hook_text: str, out_png: str):
-    hook_text = hook_text.upper().rstrip(".!?")
-    highlight = _find_highlight(hook_text).upper()
+def _split_sentences(text: str) -> list[str]:
+    parts = re.findall(r"[^.!?]+[.!?]?", text)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _make_caption_segment(segment_text: str, out_png: str):
+    segment_text = segment_text.upper().rstrip(".!?")
+    highlight = _find_highlight(segment_text).upper()
 
     img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     font = ImageFont.truetype(FONT_PATH, 46)
 
     # razbij tekst na reci, oznaci koje reci pripadaju highlight frazi
-    words = hook_text.split()
+    words = segment_text.split()
     highlight_words = highlight.split() if highlight else []
 
     def is_highlight_start(i):
@@ -154,7 +161,28 @@ def _make_hook_overlay(hook_text: str, out_png: str):
     return out_png
 
 
-def assemble(raw_video_path: str, audio_path: str, hook_text: str,
+MIN_SEGMENT_SECONDS = 2.0
+
+
+def _segment_timings(sentences: list[str], audio_dur: float):
+    """Racuna (start, end) za svaku recenicu, srazmerno njenoj duzini u
+    karakterima, sa minimalnim trajanjem po segmentu da ne "trepce" prebrzo."""
+    char_counts = [len(s) for s in sentences]
+    total_chars = sum(char_counts) or 1
+    raw_durations = [(c / total_chars) * audio_dur for c in char_counts]
+    durations = [max(MIN_SEGMENT_SECONDS, d) for d in raw_durations]
+    scale = audio_dur / sum(durations)
+    final_durations = [d * scale for d in durations]
+
+    timings = []
+    t = 0.0
+    for d in final_durations:
+        timings.append((t, t + d))
+        t += d
+    return timings
+
+
+def assemble(raw_video_path: str, audio_path: str, narration_text: str,
              out_path: str, tmp_dir: str) -> str:
     audio_dur = _ffprobe_duration(audio_path)
     video_dur = _ffprobe_duration(raw_video_path)
@@ -168,7 +196,16 @@ def assemble(raw_video_path: str, audio_path: str, hook_text: str,
         check=True, capture_output=True,
     )
 
-    hook_png = _make_hook_overlay(hook_text, os.path.join(tmp_dir, "hook.png"))
+    # caption koji PRATI govor -- podeli naraciju na recenice, svaka dobija
+    # svoj overlay PNG i svoj vremenski prozor (srazmeran duzini teksta)
+    sentences = _split_sentences(narration_text)
+    timings = _segment_timings(sentences, audio_dur)
+    segment_pngs = []
+    for i, sentence in enumerate(sentences):
+        png_path = os.path.join(tmp_dir, f"segment_{i}.png")
+        _make_caption_segment(sentence, png_path)
+        segment_pngs.append(png_path)
+
     mockup_result = _fetch_image(MOCKUP_IMAGE_URL, os.path.join(tmp_dir, "mockup.png"), MOCKUP_WIDTH)
     logo_result = _fetch_image(LOGO_IMAGE_URL, os.path.join(tmp_dir, "logo.png"), LOGO_WIDTH)
     mockup_path, mockup_h = (mockup_result[0], mockup_result[2]) if mockup_result else (None, 0)
@@ -190,8 +227,14 @@ def assemble(raw_video_path: str, audio_path: str, hook_text: str,
             check=True, capture_output=True,
         )
 
-    inputs = ["-i", looped_video, "-i", hook_png]
-    idx = 2
+    inputs = ["-i", looped_video]
+    idx = 1
+    segment_indices = []
+    for png_path in segment_pngs:
+        inputs += ["-i", png_path]
+        segment_indices.append(idx)
+        idx += 1
+
     logo_idx = mockup_idx = music_idx = None
     if logo_path:
         inputs += ["-i", logo_path]
@@ -212,23 +255,39 @@ def assemble(raw_video_path: str, audio_path: str, hook_text: str,
     filter_parts = [
         f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
         f"crop={WIDTH}:{HEIGHT}[base]",
-        # hook se vidi SAMO prvih HOOK_DISPLAY_SECONDS sekundi, ne ceo video
-        f"[base][1:v]overlay=0:0:enable='lte(t,{HOOK_DISPLAY_SECONDS})'[v1]",
     ]
-    last_v = "v1"
+    last_v = "base"
+    for i, seg_idx in enumerate(segment_indices):
+        start, end = timings[i]
+        next_v = f"cap{i}"
+        filter_parts.append(
+            f"[{last_v}][{seg_idx}:v]overlay=0:0:enable='between(t,{start:.2f},{end:.2f})'[{next_v}]"
+        )
+        last_v = next_v
+
+    mockup_start = max(0.0, audio_dur - MOCKUP_DISPLAY_SECONDS) if mockup_idx is not None else None
+
     if logo_idx is not None:
-        # gore LEVO (gore desno je zaklonjeno IG ikonicama za zvuk/opcije)
-        filter_parts.append(f"[{last_v}][{logo_idx}:v]overlay=30:50[v2]")
-        last_v = "v2"
+        # centrirano, u donjem delu ali NE na samom dnu; sakriven tokom
+        # CTA mockup slike (poslednjih par sekundi) da se ne preklapaju
+        logo_y = int(HEIGHT * 0.80)
+        if mockup_start is not None:
+            enable_expr = f":enable='lt(t,{mockup_start:.2f})'"
+        else:
+            enable_expr = ""
+        filter_parts.append(
+            f"[{last_v}][{logo_idx}:v]overlay=(main_w-overlay_w)/2:{logo_y}{enable_expr}[vlogo]"
+        )
+        last_v = "vlogo"
+
     if mockup_idx is not None:
-        mockup_start = max(0.0, audio_dur - MOCKUP_DISPLAY_SECONDS)
         # IG rezervise ~320px pri dnu za caption/dugmice -- mockup mora da
         # stane IZNAD toga, racunajuci njegovu stvarnu (skaliranu) visinu
         ig_bottom_safe = 320
         mockup_y = max(int(HEIGHT * 0.42), HEIGHT - ig_bottom_safe - mockup_h)
         filter_parts.append(
             f"[{last_v}][{mockup_idx}:v]overlay=(main_w-overlay_w)/2:{mockup_y}:"
-            f"enable='gte(t,{mockup_start})'[vout]"
+            f"enable='gte(t,{mockup_start:.2f})'[vout]"
         )
         last_v = "vout"
     else:
