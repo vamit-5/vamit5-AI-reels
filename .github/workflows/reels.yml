@@ -34,6 +34,7 @@ jobs:
 
       - name: Pokreni generisanje i objavu
         env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
