@@ -7,7 +7,7 @@ Tok:
 3. Claude API generise nov tekst naracije + video prompt (nikad ponovljen ugao)
 4. ElevenLabs generise audio
 5. Higgsfield generise video po promptu
-6. ffmpeg spaja video+audio+caption+watermark u finalni Reels
+6. ffmpeg spaja video+audio+hook+mockup u finalni Reels
 7. Cloudinary hostuje finalni fajl
 8. Instagram Graph API objavljuje Reels
 9. Upisuje se novo stanje (state.json) i lock se otkljucava, sve se commit-uje
@@ -27,13 +27,6 @@ HASHTAGS = "#vamit5 #kettlebell #trening #optimalniperformans #srbija #disciplin
 
 
 def _in_allowed_window() -> bool:
-    """
-    cron-job.org zove workflow svakih ~15-18 min kao 'budilnik', ali stvarna
-    objava treba da se desi samo u odredjenim satima (UTC). Format env
-    promenljive ALLOWED_UTC_HOUR_WINDOWS: "17-19,20-21" (pocetak-kraj, moze
-    vise opsega odvojenih zarezom). Ako promenljiva nije podesena, uvek
-    dozvoljava (korisno za rucni workflow_dispatch test).
-    """
     windows = os.environ.get("ALLOWED_UTC_HOUR_WINDOWS", "").strip()
     if not windows:
         return True
@@ -75,8 +68,7 @@ def main():
             final_path = os.path.join(tmp, "final.mp4")
             assemble.assemble(
                 raw_video_path, audio_path,
-                caption_text=episode["narration_serbian"],
-                time_point_label=episode["hook_serbian"],
+                hook_text=episode["hook_serbian"],
                 out_path=final_path,
                 tmp_dir=tmp,
             )
