@@ -78,7 +78,7 @@ def main():
             final_path = os.path.join(tmp, "final.mp4")
             assemble.assemble(
                 raw_video_path, audio_path,
-                hook_text=episode["hook_serbian"],
+                narration_text=episode["narration_serbian"],
                 out_path=final_path,
                 tmp_dir=tmp,
             )
