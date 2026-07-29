@@ -40,7 +40,10 @@ def _in_allowed_window() -> bool:
 
 
 def main():
-    if not _in_allowed_window():
+    # rucno pokretanje (dugme "Run workflow") uvek prolazi odmah, bez obzira
+    # na sat -- ogranicenje vazi SAMO za automatski (cron/budilnik) raspored
+    is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+    if not is_manual and not _in_allowed_window():
         print("Van dozvoljenog vremenskog prozora -- tiho izlazim (bez objave).")
         return
 
