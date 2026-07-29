@@ -40,16 +40,18 @@ def _ffprobe_duration(path: str) -> float:
     return float(json.loads(out.stdout)["format"]["duration"])
 
 
-def _fetch_image(url: str, out_path: str, target_width: int) -> str | None:
+def _fetch_image(url: str, out_path: str, target_width: int):
+    """Vraca (path, width, height) ili None ako preuzimanje ne uspe."""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=30) as resp, open(out_path, "wb") as f:
             f.write(resp.read())
         img = Image.open(out_path).convert("RGBA")
         ratio = target_width / img.width
-        img = img.resize((target_width, int(img.height * ratio)))
+        new_size = (target_width, int(img.height * ratio))
+        img = img.resize(new_size)
         img.save(out_path)
-        return out_path
+        return out_path, new_size[0], new_size[1]
     except Exception:
         return None
 
@@ -65,13 +67,16 @@ def _find_highlight(text: str):
     return words[-1] if words else ""
 
 
+HOOK_DISPLAY_SECONDS = 6.0  # hook se vidi samo prvih par sekundi, ne ceo video
+
+
 def _make_hook_overlay(hook_text: str, out_png: str):
     hook_text = hook_text.upper().rstrip(".!?")
     highlight = _find_highlight(hook_text).upper()
 
     img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(FONT_PATH, 56)
+    font = ImageFont.truetype(FONT_PATH, 46)
 
     # razbij tekst na reci, oznaci koje reci pripadaju highlight frazi
     words = hook_text.split()
@@ -83,7 +88,7 @@ def _make_hook_overlay(hook_text: str, out_png: str):
         return words[i:i + len(highlight_words)] == highlight_words
 
     space_w = draw.textlength(" ", font=font)
-    max_line_width = WIDTH - 220
+    max_line_width = WIDTH - 280
 
     # slaganje reci u linije
     lines, current_line, current_w = [], [], 0
@@ -111,14 +116,15 @@ def _make_hook_overlay(hook_text: str, out_png: str):
     if current_line:
         lines.append(current_line)
 
-    line_height = 78
-    pad_x, pad_y = 50, 40
+    line_height = 64
+    pad_x, pad_y = 40, 32
     block_h = line_height * len(lines) + pad_y * 2
-    block_w = min(WIDTH - 100, max(
+    block_w = min(WIDTH - 140, max(
         sum(w for _, _, w in line) + space_w * (len(line) - 1) for line in lines
     ) + pad_x * 2)
 
-    top = int(HEIGHT * 0.36)
+    # pomereno nize (ispod sredine), ali ne skroz na dno
+    top = int(HEIGHT * 0.56)
     left = (WIDTH - block_w) // 2
 
     # pozadinska providna tamna kutija sa zelenim okvirom (zaobljeni uglovi)
@@ -163,8 +169,10 @@ def assemble(raw_video_path: str, audio_path: str, hook_text: str,
     )
 
     hook_png = _make_hook_overlay(hook_text, os.path.join(tmp_dir, "hook.png"))
-    mockup_path = _fetch_image(MOCKUP_IMAGE_URL, os.path.join(tmp_dir, "mockup.png"), MOCKUP_WIDTH)
-    logo_path = _fetch_image(LOGO_IMAGE_URL, os.path.join(tmp_dir, "logo.png"), LOGO_WIDTH)
+    mockup_result = _fetch_image(MOCKUP_IMAGE_URL, os.path.join(tmp_dir, "mockup.png"), MOCKUP_WIDTH)
+    logo_result = _fetch_image(LOGO_IMAGE_URL, os.path.join(tmp_dir, "logo.png"), LOGO_WIDTH)
+    mockup_path, mockup_h = (mockup_result[0], mockup_result[2]) if mockup_result else (None, 0)
+    logo_path = logo_result[0] if logo_result else None
 
     # muzika: nasumican mp3 iz Drive foldera, vec preuzet spolja u
     # main.py kao tmp_dir/music_raw.mp3 -- ovde ga petljamo do pune
@@ -204,15 +212,20 @@ def assemble(raw_video_path: str, audio_path: str, hook_text: str,
     filter_parts = [
         f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
         f"crop={WIDTH}:{HEIGHT}[base]",
-        "[base][1:v]overlay=0:0[v1]",
+        # hook se vidi SAMO prvih HOOK_DISPLAY_SECONDS sekundi, ne ceo video
+        f"[base][1:v]overlay=0:0:enable='lte(t,{HOOK_DISPLAY_SECONDS})'[v1]",
     ]
     last_v = "v1"
     if logo_idx is not None:
-        filter_parts.append(f"[{last_v}][{logo_idx}:v]overlay=W-w-30:40[v2]")
+        # gore LEVO (gore desno je zaklonjeno IG ikonicama za zvuk/opcije)
+        filter_parts.append(f"[{last_v}][{logo_idx}:v]overlay=30:50[v2]")
         last_v = "v2"
     if mockup_idx is not None:
         mockup_start = max(0.0, audio_dur - MOCKUP_DISPLAY_SECONDS)
-        mockup_y = int(HEIGHT * 0.72)
+        # IG rezervise ~320px pri dnu za caption/dugmice -- mockup mora da
+        # stane IZNAD toga, racunajuci njegovu stvarnu (skaliranu) visinu
+        ig_bottom_safe = 320
+        mockup_y = max(int(HEIGHT * 0.42), HEIGHT - ig_bottom_safe - mockup_h)
         filter_parts.append(
             f"[{last_v}][{mockup_idx}:v]overlay=(main_w-overlay_w)/2:{mockup_y}:"
             f"enable='gte(t,{mockup_start})'[vout]"
