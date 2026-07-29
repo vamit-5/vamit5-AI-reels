@@ -89,12 +89,10 @@ def _wait_for_job(submit_response):
 
 
 def _extract_url_from_job(job):
-    # "video" (jednina, dict) je poseban slucaj -- proveri prvo njega
     video_field = job.get("video")
     if isinstance(video_field, dict) and isinstance(video_field.get("url"), str):
         return video_field["url"]
 
-    # "results", "images", "videos" (mnozina, liste), ili direktno "url"
     for list_key in ("results", "images", "videos"):
         items = job.get(list_key)
         if isinstance(items, list) and items:
@@ -113,6 +111,14 @@ def _extract_url_from_job(job):
         if isinstance(job.get(key), str):
             return job[key]
     raise RuntimeError(f"Nisam nasao URL rezultata u zavrsenom poslu: {job}")
+
+
+def _download(url, out_path):
+    # urlretrieve ne salje nase custom header-e (User-Agent) pa CDN server
+    # (isto kao Cloudflare ranije) vraca 403 -- zato preuzimamo rucno
+    req = urllib.request.Request(url, headers=_headers(), method="GET")
+    with urllib.request.urlopen(req, timeout=120) as resp, open(out_path, "wb") as f:
+        f.write(resp.read())
 
 
 def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) -> str:
@@ -138,5 +144,5 @@ def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) 
     video_job = _wait_for_job(submit_video)
     video_url = _extract_url_from_job(video_job)
 
-    urllib.request.urlretrieve(video_url, out_path)
+    _download(video_url, out_path)
     return out_path
