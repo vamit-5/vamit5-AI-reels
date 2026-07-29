@@ -10,8 +10,6 @@ import urllib.request
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 MODEL = "claude-sonnet-5"
 
-# Kondenzovana VAMIT-5 metodologija (iz Master Knowledge Base-a) -- ovo drzi
-# Claude "u liniji" sa stvarnom filozofijom brenda, ne generickim fitnesom.
 VAMIT5_METHODOLOGY = """
 VAMIT-5 = Vascular And Mitochondrial Increase Training. Kombinuje kettlebell,
 bodyweight, snagu, eksplozivnost, kondiciju i mentalnu izdrzljivost. Filozofija:
@@ -58,11 +56,25 @@ VO2 max, angiogeneza, brza/spora vlakna itd.) da zvuci autentcno i pametno,
 ne kao generic fitnes sadrzaj.
 
 PRAVILA:
-- HOOK je najvazniji deo -- prve 1-2 recenice moraju da zaustave skrolovanje
-  (sok-cinjenica, pitanje, kontraintuitivna tvrdnja). Bez dobrog hooka, ostatak
-  ne vredi.
-- Tekst naracije na SRPSKOM, govorni jezik, direktan, samouveren, mestimicno
-  agresivan/motivacioni ton (VAMIT-5 warrior identitet), ali NAUCNO TACAN.
+- OBAVEZNA SRPSKA LATINICA SA KVACICAMA -- ovo je KRITICNO pravilo, nikad ga
+  ne krsi: pisi UVEK sa pravilnim dijakritickim znacima š, đ, č, ć, ž (nikad
+  s, dj/j, c, c, z kao zamenu). Primeri ISPRAVNO: "mišić", "već", "moždani",
+  "češće", "snažan", "brže", "ključan", "žile", "unutrašnjost", "približi",
+  "moć", "vežba", "posvećenost". Ovo vazi za hook_serbian, caption_serbian
+  I narration_serbian bez izuzetka -- tekst se pretvara u govor (TTS), i bez
+  kvacica TTS pogresno izgovara reci (npr. cita "s" umesto "š"). Pre nego sto
+  vratis odgovor, mentalno provericaj svaku rec koja bi trebalo da ima kvacicu.
+- HOOK mora biti BRUTALAN i fizicki/vizuelno dramatican, ne blag opis. Stil-
+  primer (ne kopiraj doslovno, ali pogodi tu energiju i taj nivo intenziteta):
+  "OVO SE DEŠAVA U TVOM TELU NAKON UPEŠNO ZAVRŠENOG VAMIT-5 TRENINGA" ili
+  "TVOJ MOZAK BUKVALNO PREPROGRAMIRA MIŠIĆE DOK RADIŠ OVO". Kratko (do 12
+  reci), SVE VELIKIM SLOVIMA, sa pravilnim kvacicama, direktno govori "tvom"
+  telu/mozgu/misicima. Prve 1-2 sekunde moraju fizicki zaustaviti skrolovanje.
+- Ton naracije: direktan, autoritativan, pomalo agresivan/vojnicki (VAMIT-5
+  warrior identitet) -- NIKAD generican fitnes-influenser ton. Pisi kao trener
+  koji zna tacno sta se desava u telu i ne izvinjava se zbog intenziteta.
+  Izbegavaj fraze kao "ovo je vazno" ili "istrazivanja pokazuju" -- umesto toga
+  budi direktan: "Tvoj CNS upravo uci nesto sto ce promeniti kako se kreces."
 - Duzina: 50-80 reci (~25-35 sekundi govora), hook prva recenica pa objasnjenje
   pa kratak CTA na kraju (npr. poziv da probaju VAMIT-5 trening/app).
 - Nikad ne ponavljaj doslovno hook ili ugao iz prethodnih epizoda za isti slot
@@ -74,7 +86,11 @@ PRAVILA:
   pokreti za VO2 MAX, eksplozivni skok za PLYO, plank/hold za SLOW, izolovana
   vezba do "pumpe" za PUMP) sa X-ray/transparent-skin biological overlay efektom
   koji pokazuje odgovarajucu unutrasnju strukturu (krvni sudovi/misicna vlakna/
-  mitohondrije kao sitne svetlece cestice/nervni signali) vezanu za temu epizode
+  mitohondrije kao sitne svetlece cestice/nervni signali) vezanu za temu epizode.
+  UVEK ukljuci u opis scene da se to desava u tamnoj, industrijskoj VAMIT-5
+  trening-sali/studiju u pozadini (dark gym studio background, training
+  equipment silhouettes, subtle green accent lighting) da se vidi konktekst
+  gde se trenira, ne prazan/apstraktan prostor.
 
 Vrati ISKLJUCIVO validan JSON, bez markdown ograda, u formatu:
 {{"hook_serbian": "prva recenica/hook, samostalno", "caption_serbian": "caption za
