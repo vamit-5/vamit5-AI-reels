@@ -3,14 +3,15 @@ Glavni ulazni fajl. Pokrece ga GitHub Actions (cron + workflow_dispatch).
 
 Tok:
 1. Pokusaj da zauzmes lock -- ako neko drugi vec radi, tiho izadji
-2. Odaberi sledecu vremensku tacku (rotacija) i istoriju uglova za nju
-3. Claude API generise nov tekst naracije + video prompt (nikad ponovljen ugao)
-4. ElevenLabs generise audio
-5. Higgsfield generise video po promptu
-6. ffmpeg spaja video+audio+hook+mockup u finalni Reels
-7. Cloudinary hostuje finalni fajl
-8. Instagram Graph API objavljuje Reels
-9. Upisuje se novo stanje (state.json) i lock se otkljucava, sve se commit-uje
+2. Odaberi sledecu gotovu skriptu (rotacija u krug)
+3. ElevenLabs generise audio (tacan tekst, bez izmena)
+4. Sa Google Drive-a preuzmi sledeci video snimak i sledecu muziku
+   (rotacija, nikad isti fajl dva puta zaredom)
+5. ffmpeg spaja: video (loop) + glas + muzika (ducked) + hook caption +
+   logo + CTA mockup na kraju
+6. Cloudinary hostuje finalni fajl
+7. Instagram Graph API objavljuje Reels
+8. Upisuje se novo stanje i lock se otkljucava, sve se commit-uje
 """
 import datetime
 import os
@@ -21,9 +22,9 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib import state as state_lib
-from lib import theme, tts, video, assemble, cloudinary_upload, instagram, lock
+from lib import theme, tts, gdrive, assemble, cloudinary_upload, instagram, lock
 
-HASHTAGS = "#vamit5 #kettlebell #trening #optimalniperformans #srbija #disciplina #mentalnasnaga #fitness"
+HASHTAGS = "#vamit5 #kettlebell #trening #srbija #disciplina #mentalnasnaga #fitness"
 
 
 def _in_allowed_window() -> bool:
@@ -50,20 +51,26 @@ def main():
 
     try:
         st = state_lib.load_state()
-        time_point, idx = state_lib.pick_next_time_point(st)
-        past_angles = st.get("history", {}).get(str(idx), [])
 
-        print(f"Generisem epizodu za: {time_point}")
-        episode = theme.generate_episode(time_point, past_angles)
+        episode = theme.select_episode(st)
+        print(f"Skripta #{episode['script_index']}: {episode['hook_serbian'][:60]}...")
 
         with tempfile.TemporaryDirectory() as tmp:
             audio_path = os.path.join(tmp, "narration.mp3")
             tts.synthesize(episode["narration_serbian"], audio_path)
 
-            raw_video_path = os.path.join(tmp, "raw.mp4")
-            video.generate_episode_video(
-                episode["video_prompt_english"], episode["video_prompt_english"], raw_video_path
-            )
+            videos, audios = gdrive.list_files()
+            video_item = gdrive.pick_next(videos, st.get("last_video_id"))
+            raw_video_path = os.path.join(tmp, "raw_video.mp4")
+            gdrive.download_file(video_item["id"], raw_video_path)
+            print(f"Video: {video_item['name']}")
+
+            music_item = None
+            if audios:
+                music_item = gdrive.pick_next(audios, st.get("last_audio_id"))
+                music_raw_path = os.path.join(tmp, "music_raw.mp3")
+                gdrive.download_file(music_item["id"], music_raw_path)
+                print(f"Muzika: {music_item['name']}")
 
             final_path = os.path.join(tmp, "final.mp4")
             assemble.assemble(
@@ -79,12 +86,15 @@ def main():
             post_id = instagram.publish_reel(public_url, full_caption)
             print(f"Objavljeno na Instagram, post id: {post_id}")
 
-        st = state_lib.record_episode(st, idx, episode["angle_summary"], episode["caption_serbian"])
+        st["next_script_index"] = episode["script_index"] + 1  # theme.py radi % len(SCRIPTS) pri citanju
+        st["last_video_id"] = video_item["id"]
+        if music_item:
+            st["last_audio_id"] = music_item["id"]
         state_lib.save_state(st)
 
         lock.release_and_commit(
             [state_lib.STATE_PATH],
-            f"chore: objavljena epizoda '{time_point}' (post {post_id})",
+            f"chore: objavljena skripta #{episode['script_index']} (post {post_id})",
         )
 
     except Exception:
