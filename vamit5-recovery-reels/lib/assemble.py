@@ -83,7 +83,7 @@ def _make_caption_segment(segment_text: str, out_png: str):
 
     img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(FONT_PATH, 46)
+    font = ImageFont.truetype(FONT_PATH, 36)
 
     # razbij tekst na reci, oznaci koje reci pripadaju highlight frazi
     words = segment_text.split()
@@ -123,8 +123,8 @@ def _make_caption_segment(segment_text: str, out_png: str):
     if current_line:
         lines.append(current_line)
 
-    line_height = 64
-    pad_x, pad_y = 40, 32
+    line_height = 50
+    pad_x, pad_y = 30, 22
     block_h = line_height * len(lines) + pad_y * 2
     block_w = min(WIDTH - 140, max(
         sum(w for _, _, w in line) + space_w * (len(line) - 1) for line in lines
@@ -196,20 +196,32 @@ def assemble(raw_video_path: str, audio_path: str, narration_text: str,
         check=True, capture_output=True,
     )
 
-    # caption koji PRATI govor -- podeli naraciju na recenice, svaka dobija
-    # svoj overlay PNG i svoj vremenski prozor (srazmeran duzini teksta)
-    sentences = _split_sentences(narration_text)
-    timings = _segment_timings(sentences, audio_dur)
-    segment_pngs = []
-    for i, sentence in enumerate(sentences):
-        png_path = os.path.join(tmp_dir, f"segment_{i}.png")
-        _make_caption_segment(sentence, png_path)
-        segment_pngs.append(png_path)
-
+    # slike prvo (da znamo da li/kad mockup pocinje, pre nego sto napravimo
+    # caption segmente -- captioni se moraju zavrsiti PRE mockup slike)
     mockup_result = _fetch_image(MOCKUP_IMAGE_URL, os.path.join(tmp_dir, "mockup.png"), MOCKUP_WIDTH)
     logo_result = _fetch_image(LOGO_IMAGE_URL, os.path.join(tmp_dir, "logo.png"), LOGO_WIDTH)
     mockup_path, mockup_h = (mockup_result[0], mockup_result[2]) if mockup_result else (None, 0)
     logo_path = logo_result[0] if logo_result else None
+    mockup_start = max(0.0, audio_dur - MOCKUP_DISPLAY_SECONDS) if mockup_path else None
+
+    # caption koji PRATI govor -- podeli naraciju na recenice, svaka dobija
+    # svoj overlay PNG i svoj vremenski prozor (srazmeran duzini teksta).
+    # Ako mockup slika postoji, captioni se ORESECAJU pre nego sto ona
+    # pocne da se prikazuje (da se ne preklapaju na istom mestu)
+    sentences = _split_sentences(narration_text)
+    raw_timings = _segment_timings(sentences, audio_dur)
+
+    timings, segment_pngs = [], []
+    for i, sentence in enumerate(sentences):
+        start, end = raw_timings[i]
+        if mockup_start is not None:
+            end = min(end, mockup_start)
+        if start >= end:
+            continue  # ceo segment pada u CTA zonu, preskoci ga
+        png_path = os.path.join(tmp_dir, f"segment_{i}.png")
+        _make_caption_segment(sentence, png_path)
+        segment_pngs.append(png_path)
+        timings.append((start, end))
 
     # muzika: nasumican mp3 iz Drive foldera, vec preuzet spolja u
     # main.py kao tmp_dir/music_raw.mp3 -- ovde ga petljamo do pune
@@ -264,8 +276,6 @@ def assemble(raw_video_path: str, audio_path: str, narration_text: str,
             f"[{last_v}][{seg_idx}:v]overlay=0:0:enable='between(t,{start:.2f},{end:.2f})'[{next_v}]"
         )
         last_v = next_v
-
-    mockup_start = max(0.0, audio_dur - MOCKUP_DISPLAY_SECONDS) if mockup_idx is not None else None
 
     if logo_idx is not None:
         # centrirano, u donjem delu ali NE na samom dnu; sakriven tokom
