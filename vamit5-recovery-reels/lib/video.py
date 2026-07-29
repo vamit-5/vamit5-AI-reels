@@ -19,9 +19,9 @@ import time
 import urllib.request
 import urllib.error
 
-HIGGSFIELD_API_KEY = os.environ["HIGGSFIELD_API_KEY"]
-HIGGSFIELD_API_SECRET = os.environ["HIGGSFIELD_API_SECRET"]
-HIGGSFIELD_MODEL_ID = os.environ.get("HIGGSFIELD_MODEL_ID", "higgsfield-ai/soul/standard")
+HIGGSFIELD_API_KEY = os.environ["HIGGSFIELD_API_KEY"].strip()
+HIGGSFIELD_API_SECRET = os.environ["HIGGSFIELD_API_SECRET"].strip()
+HIGGSFIELD_MODEL_ID = os.environ.get("HIGGSFIELD_MODEL_ID", "higgsfield-ai/soul/standard").strip()
 
 BASE_URL = "https://platform.higgsfield.ai"
 AUTH_HEADER = f"Key {HIGGSFIELD_API_KEY}:{HIGGSFIELD_API_SECRET}"
@@ -41,8 +41,12 @@ def _request(method, url, payload=None):
         },
         method=method,
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode(errors="ignore")
+        raise RuntimeError(f"Higgsfield HTTP greska {e.code} na {url}: {error_body}") from None
 
 
 def generate_video(prompt: str, out_path: str) -> str:
