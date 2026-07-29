@@ -5,8 +5,7 @@ Dvokorakno generisanje video epizode preko Higgsfield Cloud API-ja:
 
 Auth: dva odvojena header-a "hf-api-key" i "hf-secret".
 Odgovori imaju ugnjezdenu strukturu: {"id":..., "jobs":[{"id":..., "status":...,
-"results": [...]}]} -- pravi ID za pracenje statusa je jobs[0]["id"], ne
-spoljni "id".
+"results": [...]}]} -- status endpoint trazi SPOLJNI "id", ne jobs[0]["id"].
 """
 import json
 import os
@@ -70,7 +69,9 @@ def _wait_for_job(submit_response):
     if job.get("status") == "completed":
         return job
 
-    request_id = job.get("id")
+    # bitno: status endpoint trazi SPOLJNI "request" id (submit_response["id"]),
+    # NE unutrasnji jobs[0]["id"] -- to su dva razlicita ID-ja
+    request_id = submit_response.get("id")
     if not request_id:
         raise RuntimeError(f"Nema request_id u Higgsfield odgovoru: {submit_response}")
     status_url = STATUS_URL_TMPL.format(request_id=request_id)
@@ -85,6 +86,7 @@ def _wait_for_job(submit_response):
             return job
         if st in ("failed", "nsfw", "error"):
             raise RuntimeError(f"Higgsfield generisanje nije uspelo: {job}")
+        # queued / in_progress -> nastavi da ceka
     raise RuntimeError("Higgsfield generisanje je isteklo (timeout) -- probaj ponovo")
 
 
