@@ -67,10 +67,6 @@ def _wait_for_job(submit_response):
     if job.get("status") == "completed":
         return job
 
-    # Higgsfield koristi razlicita imena polja na razlicitim endpoint-ima
-    # (Soul vraca "id", DoP Lite vraca "request_id") -- zato prvo probamo
-    # da uzmemo "status_url" direktno (uvek prisutan, najpouzdaniji nacin),
-    # a tek ako ga nema, sastavljamo URL rucno iz id/request_id polja
     status_url = submit_response.get("status_url")
     if not status_url:
         request_id = submit_response.get("id") or submit_response.get("request_id")
@@ -93,8 +89,12 @@ def _wait_for_job(submit_response):
 
 
 def _extract_url_from_job(job):
-    # Higgsfield koristi razlicita imena polja zavisno od endpointa/faze:
-    # "results", "images", "videos", ili direktno "url" -- probaj sve
+    # "video" (jednina, dict) je poseban slucaj -- proveri prvo njega
+    video_field = job.get("video")
+    if isinstance(video_field, dict) and isinstance(video_field.get("url"), str):
+        return video_field["url"]
+
+    # "results", "images", "videos" (mnozina, liste), ili direktno "url"
     for list_key in ("results", "images", "videos"):
         items = job.get(list_key)
         if isinstance(items, list) and items:
