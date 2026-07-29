@@ -27,6 +27,12 @@ def _headers():
         "Content-Type": "application/json",
         "hf-api-key": HIGGSFIELD_API_KEY,
         "hf-secret": HIGGSFIELD_API_SECRET,
+        "Accept": "application/json",
+        # Cloudflare (ispred Higgsfield API-ja) blokira podrazumevani
+        # "Python-urllib" User-Agent kao bota (error code 1010) -- ovo to
+        # zaobilazi predstavljajuci se kao obican browser
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     }
 
 
