@@ -34,9 +34,9 @@ def _first_two_sentences(text: str) -> str:
     return " ".join(m.strip() for m in matches[:2]) if matches else text.strip()
 
 
-def select_episode(state: dict) -> dict:
-    idx = state.get("next_script_index", 0) % len(SCRIPTS)
-    narration = SCRIPTS[idx]
+def select_from_pool(scripts_pool: list, index: int) -> dict:
+    idx = index % len(scripts_pool)
+    narration = scripts_pool[idx]
 
     hook = _first_sentence(narration)
     caption_intro = _first_two_sentences(narration)
@@ -48,3 +48,7 @@ def select_episode(state: dict) -> dict:
         "hook_serbian": hook,
         "caption_serbian": caption,
     }
+
+
+def select_episode(state: dict) -> dict:
+    return select_from_pool(SCRIPTS, state.get("next_script_index", 0))
