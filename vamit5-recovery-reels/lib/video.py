@@ -4,9 +4,13 @@ Dvokorakno generisanje video epizode preko Higgsfield Cloud API-ja:
 2. Higgsfield DoP Lite (image-to-video) animira tu sliku u kratak pokret
 
 Auth: dva odvojena header-a "hf-api-key" i "hf-secret".
+Odgovori imaju ugnjezdenu strukturu: {"id":..., "jobs":[{"id":..., "status":...,
+"results": [...]}]} -- pravi ID za pracenje statusa je jobs[0]["id"], ne
+spoljni "id".
 """
 import json
 import os
+import random
 import time
 import urllib.request
 import urllib.error
@@ -67,6 +71,10 @@ def _wait_for_job(submit_response):
     if job.get("status") == "completed":
         return job
 
+    # Higgsfield koristi razlicita imena polja na razlicitim endpoint-ima
+    # (Soul vraca "id", DoP Lite vraca "request_id") -- zato prvo probamo
+    # da uzmemo "status_url" direktno (uvek prisutan, najpouzdaniji nacin),
+    # a tek ako ga nema, sastavljamo URL rucno iz id/request_id polja
     status_url = submit_response.get("status_url")
     if not status_url:
         request_id = submit_response.get("id") or submit_response.get("request_id")
@@ -89,10 +97,13 @@ def _wait_for_job(submit_response):
 
 
 def _extract_url_from_job(job):
+    # Higgsfield koristi razlicita imena polja zavisno od endpointa/faze:
+    # "video" (jednina, dict) je poseban slucaj -- proveri prvo njega
     video_field = job.get("video")
     if isinstance(video_field, dict) and isinstance(video_field.get("url"), str):
         return video_field["url"]
 
+    # "results", "images", "videos" (mnozina, liste), ili direktno "url"
     for list_key in ("results", "images", "videos"):
         items = job.get(list_key)
         if isinstance(items, list) and items:
@@ -122,6 +133,13 @@ def _download(url, out_path):
 
 
 def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) -> str:
+    # KRITICNO: eksplicitno saljemo NASUMICAN seed na SVAKI poziv (i za
+    # sliku i za video, odvojeno) -- bez ovoga Higgsfield ume da koristi
+    # neki podrazumevani/slican seed sto pravi vizuelno skoro-identicne
+    # klipove uprkos razlicitim promptovima. random.SystemRandom koristi
+    # OS izvor entropije (ne obican pseudo-random), maksimalna nasumicnost.
+    rng = random.SystemRandom()
+
     submit_image = _post(SOUL_URL, {
         "params": {
             "prompt": image_prompt,
@@ -130,6 +148,7 @@ def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) 
             "enhance_prompt": True,
             "style_strength": 1,
             "width_and_height": "1536x1536",
+            "seed": rng.randint(1, 2_147_483_647),
         }
     })
     image_job = _wait_for_job(submit_image)
@@ -140,6 +159,7 @@ def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) 
         "motions": [],
         "image_url": image_url,
         "enhance_prompt": True,
+        "seed": rng.randint(1, 2_147_483_647),
     })
     video_job = _wait_for_job(submit_video)
     video_url = _extract_url_from_job(video_job)
