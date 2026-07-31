@@ -148,7 +148,7 @@ def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) 
             "enhance_prompt": True,
             "style_strength": 1,
             "width_and_height": "1536x1536",
-            "seed": rng.randint(1, 2_147_483_647),
+            "seed": rng.randint(1, 1_000_000),
         }
     })
     image_job = _wait_for_job(submit_image)
@@ -159,7 +159,7 @@ def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) 
         "motions": [],
         "image_url": image_url,
         "enhance_prompt": True,
-        "seed": rng.randint(1, 2_147_483_647),
+        "seed": rng.randint(1, 1_000_000),
     })
     video_job = _wait_for_job(submit_video)
     video_url = _extract_url_from_job(video_job)
