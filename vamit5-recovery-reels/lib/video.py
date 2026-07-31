@@ -145,7 +145,7 @@ def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) 
             "prompt": image_prompt,
             "quality": "1080p",
             "batch_size": 1,
-            "enhance_prompt": True,
+            "enhance_prompt": False,  # iskljuceno -- ne dozvoljavamo Higgsfield-u da sam dodaje "cinematic" stilizaciju
             "style_strength": 1,
             "width_and_height": "1536x1536",
             "seed": rng.randint(1, 1_000_000),
@@ -158,7 +158,7 @@ def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) 
         "prompt": video_prompt,
         "motions": [],
         "image_url": image_url,
-        "enhance_prompt": True,
+        "enhance_prompt": False,  # iskljuceno -- ne dozvoljavamo Higgsfield-u da sam dodaje "cinematic" stilizaciju
         "seed": rng.randint(1, 1_000_000),
     })
     video_job = _wait_for_job(submit_video)
