@@ -15,12 +15,17 @@ STATE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 
 def load_state():
     if not os.path.exists(STATE_PATH):
-        return {"next_script_index": 0, "last_video_id": None, "last_audio_id": None}
+        return {
+            "next_script_index": 0, "last_video_id": None, "last_audio_id": None,
+            "next_edu_script_index": 0, "last_edu_audio_id": None,
+        }
     with open(STATE_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
     data.setdefault("next_script_index", 0)
     data.setdefault("last_video_id", None)
     data.setdefault("last_audio_id", None)
+    data.setdefault("next_edu_script_index", 0)
+    data.setdefault("last_edu_audio_id", None)
     return data
 
 
