@@ -28,6 +28,7 @@ def synthesize(text: str, out_path: str) -> str:
             "similarity_boost": 0.8,
             "style": 0.35,
             "use_speaker_boost": True,
+            "speed": 1.1,
         },
     }
     import json
