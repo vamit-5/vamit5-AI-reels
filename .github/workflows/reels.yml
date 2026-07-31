@@ -1,22 +1,11 @@
-name: VAMIT-5 Recovery Reels
+name: VAMIT-5 Edukativni Reels (AI anatomija)
 
 on:
   schedule:
-    # 10 termina dnevno, razmaknuti ~90 min (u UTC vremenu). Ovo odgovara
-    # priblizno 08:00-21:30 po srpskom letnjem vremenu (UTC+2). GitHub-ov
-    # cron nije 100% pouzdan (kasni pod opterecenjem), zato je dobro imati
-    # i cron-job.org "budilnik" koji dodatno zove workflow_dispatch --
-    # lock.py sistem sprecava duple objave ako se poklope
-    - cron: "0 6 * * *"
-    - cron: "30 7 * * *"
-    - cron: "0 9 * * *"
-    - cron: "30 10 * * *"
-    - cron: "0 12 * * *"
-    - cron: "30 13 * * *"
-    - cron: "0 15 * * *"
-    - cron: "30 16 * * *"
+    # 2x dnevno, razmaknuto od obicnog reels rasporeda (koji je 08h/18h
+    # po srpskom vremenu) -- ovde 12h i 20h po srpskom letnjem vremenu (UTC+2)
+    - cron: "0 10 * * *"
     - cron: "0 18 * * *"
-    - cron: "30 19 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -25,7 +14,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: vamit5-recovery-reels
@@ -44,16 +33,19 @@ jobs:
       - name: Instaliraj Python zavisnosti
         run: pip install -r requirements.txt
 
-      - name: Pokreni generisanje i objavu
+      - name: Pokreni generisanje i objavu (edukativni)
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          HIGGSFIELD_API_KEY: ${{ secrets.HIGGSFIELD_API_KEY }}
+          HIGGSFIELD_API_SECRET: ${{ secrets.HIGGSFIELD_API_SECRET }}
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_BUSINESS_ACCOUNT_ID: ${{ secrets.IG_BUSINESS_ACCOUNT_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
-          ALLOWED_UTC_HOUR_WINDOWS: ""  # prazno = uvek dozvoljeno, tacno vreme kontrolisu cron termini iznad
-        run: python main.py
+          ALLOWED_UTC_HOUR_WINDOWS: ""
+        run: python main_edu.py
