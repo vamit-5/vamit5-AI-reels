@@ -184,6 +184,7 @@ def _segment_timings(sentences: list[str], audio_dur: float):
 
 def assemble(raw_video_path: str, audio_path: str, narration_text: str,
              out_path: str, tmp_dir: str) -> str:
+    """Standardni tok: petlja JEDAN stvaran snimak (Drive) do pune duzine."""
     audio_dur = _ffprobe_duration(audio_path)
     video_dur = _ffprobe_duration(raw_video_path)
 
@@ -195,6 +196,18 @@ def assemble(raw_video_path: str, audio_path: str, narration_text: str,
          looped_video],
         check=True, capture_output=True,
     )
+    return finalize(looped_video, audio_path, narration_text, out_path, tmp_dir)
+
+
+def finalize(base_video_path: str, audio_path: str, narration_text: str,
+              out_path: str, tmp_dir: str) -> str:
+    """
+    Deljeni zavrsni korak za OBA pipeline-a (obican i edukativni): base_video_path
+    je vec silent video TACNE duzine kao audio -- ovde se dodaju caption
+    segmenti, muzika, logo i CTA mockup, pa sve spaja u finalni mp4.
+    """
+    audio_dur = _ffprobe_duration(audio_path)
+    looped_video = base_video_path
 
     # slike prvo (da znamo da li/kad mockup pocinje, pre nego sto napravimo
     # caption segmente -- captioni se moraju zavrsiti PRE mockup slike)
@@ -203,6 +216,7 @@ def assemble(raw_video_path: str, audio_path: str, narration_text: str,
     mockup_path, mockup_h = (mockup_result[0], mockup_result[2]) if mockup_result else (None, 0)
     logo_path = logo_result[0] if logo_result else None
     mockup_start = max(0.0, audio_dur - MOCKUP_DISPLAY_SECONDS) if mockup_path else None
+
 
     # caption koji PRATI govor -- podeli naraciju na recenice, svaka dobija
     # svoj overlay PNG i svoj vremenski prozor (srazmeran duzini teksta).
