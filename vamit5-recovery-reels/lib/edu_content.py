@@ -62,9 +62,18 @@ recenice pre nego sto opises scenu:
   Taj default je DOZVOLJEN iskljucivo kad tekst DOSLOVNO opisuje VAMIT-5
   trening pokret.
 
-STIL (primeni na SVAKU scenu, bez obzira na sadrzaj): cinematic, tamna
-atmosfera sa suptilnim vojno-zelenim akcentnim osvetljenjem, realisticno,
-visok kvalitet, vertikalan 9:16 kadar.
+STIL (primeni na SVAKU scenu, bez obzira na sadrzaj) -- ovo je JEDNAKO
+VAZNO kao i sadrzaj scene, procitaj pazljivo:
+FOTOREALISTICNO, kao stvarna fotografija snimljena profesionalnim DSLR
+fotoaparatom ili modernim telefonom -- NE 3D render, NE CGI, NE "video
+game" izgled, NE preterano poliran/uljan/plastican izgled koze. Koza mora
+izgledati kao PRAVA LJUDSKA KOZA -- matirana, sa prirodnom teksturom, NE
+sjajna/masna/plasticna. Prirodno, realisticno osvetljenje (moze biti tamna
+prostorija sa suptilnim zelenim akcentnim svetlom, ali izvor svetla i senke
+moraju delovati fizicki verovatno, ne kao render). Zamisli da opisujes
+kadar iz autenticne fitnes fotografije ili amaterskog telefonskog snimka
+iz teretane -- NE filmski poster, NE video-igra, NE hiper-stilizovana CGI
+scena. Vertikalan 9:16 kadar.
 
 Vrati ISKLJUCIVO validan JSON (bez markdown ograda), u formatu:
 {{"segments": [{{"start": 0, "end": 2, "video_prompt_english": "..."}}, ...]}}
@@ -117,23 +126,26 @@ def _parse_json(raw: str) -> dict:
 # Rezervne scene (SAMO ako Claude nikako ne uspe da vrati validan JSON posle
 # svih pokusaja) -- namerno RAZLICITE jedna od druge da se izbegne
 # ponavljanje istog klipa, ali ovo je krajnja mera, ne normalan put
+_PHOTOREAL_SUFFIX = (
+    ", photorealistic, shot on DSLR camera, natural matte skin texture, "
+    "NOT CGI, NOT 3D render, NOT shiny or oily skin, authentic candid "
+    "fitness photography style"
+)
+
 _FALLBACK_PROMPTS = [
     "Ordinary tired man walking up an apartment staircase carrying grocery "
-    "bags, out of breath, leaning on the railing, realistic, dark cinematic "
-    "lighting, subtle military green accent",
+    "bags, out of breath, leaning on the railing" + _PHOTOREAL_SUFFIX,
     "Confused man sitting on a couch scrolling through his phone, dozens of "
-    "fitness app icons visible on screen, frustrated frown, realistic, dark "
-    "cinematic lighting",
+    "fitness app icons visible on screen, frustrated frown" + _PHOTOREAL_SUFFIX,
     "Athletic muscular man in a dark VAMIT-5 training studio performing a "
-    "kettlebell swing, military green cinematic lighting, dynamic motion",
+    "kettlebell swing, dynamic motion, subtle green accent light" + _PHOTOREAL_SUFFIX,
     "Athletic muscular man in a dark VAMIT-5 training studio holding a deep "
-    "squat position, visible muscle tension, military green cinematic "
-    "lighting",
-    "Close-up X-ray biological overlay on an athlete's torso showing a "
-    "glowing beating heart and blood vessels, dark cinematic background, "
-    "military green accent light",
+    "squat position, visible muscle tension, subtle green accent light" + _PHOTOREAL_SUFFIX,
+    "Close-up biological X-ray overlay on an athlete's torso showing a "
+    "glowing beating heart and blood vessels, dark background, subtle green "
+    "accent light" + _PHOTOREAL_SUFFIX,
     "Group of determined people finishing a workout together in a dark "
-    "VAMIT-5 studio, high fives, authentic emotion, cinematic lighting",
+    "VAMIT-5 studio, high fives, authentic emotion" + _PHOTOREAL_SUFFIX,
 ]
 
 
