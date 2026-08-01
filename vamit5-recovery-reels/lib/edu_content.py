@@ -10,10 +10,65 @@ ostaje 100% ono sto je covek napisao.
 """
 import json
 import os
+import random
 import urllib.request
 
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 MODEL = "claude-sonnet-5"
+
+# ===== MEHANICKI FORSIRANA RAZLICITOST (ne oslanja se na Claude "trud") =====
+# Za svaki segment se PRISILNO dodeljuje tacno odredjen ugao kamere i
+# konkretan vizuelni detalj koji Claude MORA da ukljuci u prompt. Ovo je
+# garantovana strukturna razlika, nezavisna od toga koliko su segmenti
+# sadrzajno slicni. Liste imaju vise stavki nego MAX_SEGMENTS, i biraju se
+# BEZ PONAVLJANJA unutar jednog videa (random.sample).
+CAMERA_ANGLES = [
+    "extreme close-up shot on the face and upper shoulders",
+    "wide shot showing the entire body from several meters away",
+    "low camera angle looking upward for a dramatic powerful perspective",
+    "side profile view from the left side",
+    "over-the-shoulder view from behind the subject",
+    "high top-down bird's eye view looking straight down",
+    "medium shot framed from the waist up",
+    "close angle focused on the hands and forearms",
+    "wide establishing shot showing the whole environment first",
+    "slightly low handheld-style angled shot",
+    "extreme close-up on the eyes and forehead",
+    "three-quarter angle view of the upper body",
+    "close-up on the feet and legs during movement",
+    "reverse angle shot facing toward the camera from the front",
+]
+
+VISUAL_DETAILS = [
+    "wearing a plain black tank top",
+    "wearing a dark olive green t-shirt",
+    "with visible chalk dust on the hands",
+    "with a sweat-soaked shirt",
+    "wearing black training shorts",
+    "with a black wristband on one wrist",
+    "standing on a black rubber gym mat with visible texture",
+    "next to a kettlebell with a red-painted handle",
+    "with short messy dark hair",
+    "with a plain grey concrete wall visible in the background",
+    "wearing dark grey joggers",
+    "with a water bottle visible on the floor nearby",
+    "with a small hand towel draped over one shoulder",
+    "with visible exposed brick wall in the background",
+]
+
+
+def _assign_forced_variety(segment_count: int):
+    """Nasumicno bira RAZLICIT ugao kamere i RAZLICIT vizuelni detalj za
+    svaki od segment_count segmenata -- bez ponavljanja unutar ovog videa."""
+    angles = random.sample(CAMERA_ANGLES, min(segment_count, len(CAMERA_ANGLES)))
+    details = random.sample(VISUAL_DETAILS, min(segment_count, len(VISUAL_DETAILS)))
+    # ako je segment_count > duzina liste (retko, MAX_SEGMENTS=12 blizu duzine
+    # listi), popuni ciklicno da ne pukne
+    while len(angles) < segment_count:
+        angles += random.sample(CAMERA_ANGLES, min(segment_count - len(angles), len(CAMERA_ANGLES)))
+    while len(details) < segment_count:
+        details += random.sample(VISUAL_DETAILS, min(segment_count - len(details), len(VISUAL_DETAILS)))
+    return angles[:segment_count], details[:segment_count]
 
 # Broj segmenata NIJE fiksan -- racuna se dinamicki na osnovu trajanja
 # audija, tako da svaki segment otprilike odgovara prirodnoj duzini JEDNOG
@@ -217,25 +272,51 @@ def _validate_segments(segments: list[dict], num_sentences: int) -> bool:
 
 
 def split_into_segments(sentences: list[str], segment_count: int) -> list[dict]:
+    forced_angles, forced_details = _assign_forced_variety(segment_count)
+
     numbered = "\n".join(f"{i}: {s}" for i, s in enumerate(sentences))
+    assignments = "\n".join(
+        f"- Segment {i}: MORA koristiti kadar '{forced_angles[i]}' I MORA "
+        f"ukljuciti detalj '{forced_details[i]}'"
+        for i in range(segment_count)
+    )
     user_content = (
         f"Skripta (recenice numerisane):\n{numbered}\n\n"
         "Podeli je i napravi video promptove. Duboko razmisli o KONTEKSTU "
         "svake grupe recenica pre nego sto opises scenu -- ne default na "
-        "'fit tip u teretani' ako tekst opisuje nesto drugo."
+        "'fit tip u teretani' ako tekst opisuje nesto drugo.\n\n"
+        f"OBAVEZNA DODELA PO SEGMENTU (ukljuci doslovno u odgovarajuci "
+        f"video_prompt_english):\n{assignments}"
     )
 
+    segments = None
     last_err = None
     for attempt in range(5):
         try:
             raw = _anthropic_call(user_content, segment_count)
             data = _parse_json(raw)
-            segments = data.get("segments", [])
-            if _validate_segments(segments, len(sentences)):
-                return segments
+            candidate = data.get("segments", [])
+            if _validate_segments(candidate, len(sentences)):
+                segments = candidate
+                break
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             last_err = e
             continue
 
-    print(f"UPOZORENJE: segmentacija nije validna posle 5 pokusaja: {last_err}")
-    return _fallback_equal_split(len(sentences), segment_count)
+    if segments is None:
+        print(f"UPOZORENJE: segmentacija nije validna posle 5 pokusaja: {last_err}")
+        segments = _fallback_equal_split(len(sentences), segment_count)
+
+    # GARANCIJA (ne zavisi od toga da li je Claude poslusan): prisilno
+    # dodaj dodeljeni ugao i detalj na kraj SVAKOG prompta, cak i ako ga
+    # Claude vec pomenuo -- ponavljanje istog detalja u tekstu ne steti,
+    # ali izostavljanje bi ponistilo celu garanciju razlicitosti
+    for i, seg in enumerate(segments):
+        angle = forced_angles[i] if i < len(forced_angles) else forced_angles[i % len(forced_angles)]
+        detail = forced_details[i] if i < len(forced_details) else forced_details[i % len(forced_details)]
+        seg["video_prompt_english"] = (
+            f"{seg['video_prompt_english']}. Camera angle: {angle}. "
+            f"Visual detail: {detail}."
+        )
+
+    return segments
