@@ -15,7 +15,18 @@ import urllib.request
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 MODEL = "claude-sonnet-5"
 
-EDU_SEGMENT_COUNT = 5
+# Broj segmenata NIJE fiksan -- racuna se dinamicki na osnovu trajanja
+# audija, tako da svaki segment otprilike odgovara prirodnoj duzini JEDNOG
+# AI klipa (5-8 sekundi). Ovo sprecava da se isti klip PETLJA unutar
+# predugackog segmenta (sto bi izgledalo kao ponavljanje iste scene).
+TARGET_CLIP_SECONDS = 6.5
+MIN_SEGMENTS = 3
+MAX_SEGMENTS = 12  # gornja granica zbog Higgsfield troska
+
+
+def compute_segment_count(audio_dur: float) -> int:
+    raw = round(audio_dur / TARGET_CLIP_SECONDS)
+    return max(MIN_SEGMENTS, min(MAX_SEGMENTS, raw))
 
 SYSTEM_PROMPT = """Ti si vizuelni reziser za VAMIT-5 edukativne Instagram Reels
 epizode. Dobijas skriptu (vec podeljenu na numerisane recenice) i tvoj posao
@@ -51,29 +62,50 @@ recenice pre nego sto opises scenu:
   ljudsku scenu koja to ilustruje (grupa ljudi, izraz lica pun odlucnosti,
   itd.), NE apstraktan opis.
 
-===== STROGO ZABRANJENO =====
-- NIKAD ne koristi isti/skoro isti opis scene za dva razlicita segmenta.
-  Svaki od {segment_count} promptova MORA biti vizuelno i sadrzajno
-  RAZLICIT -- razlicit lik, razlicita radnja, razlicit ambijent, cak i kad
-  su obe scene "VAMIT-5 trening" (npr. jedna cucanj, druga kettlebell swing,
-  ne dva puta identican pokret).
+===== STROGO ZABRANJENO (APSOLUTNO, BEZ IZUZETKA) =====
+- NIKAD ne koristi isti/skoro isti opis scene za dva razlicita segmenta,
+  CAK NI KAD dva ili vise uzastopnih segmenata pricaju o istoj opstoj temi
+  (npr. oba pominju "VAMIT-5 trening" ili oba pominju "snagu"). Opsta tema
+  NIJE izgovor za istu scenu -- svaki segment MORA da se razlikuje u SVE
+  TRI stvari istovremeno:
+    1) KO je u kadru (razlicit tip coveka/ljudi, razlicita gradja, razlicita
+       odeca/kontekst)
+    2) KOJA konkretna radnja se desava (razlicit pokret, razlicita poza,
+       razlicita akcija -- ne "trenira" uopsteno, nego TACNO koji pokret)
+    3) KAKAV je kadar/ugao kamere (krupni plan lica, siroki plan celog tela,
+       pogled odozgo, iz profila, itd. -- variraj)
+  Ako od {segment_count} promptova bilo koja DVA licE slicno kad ih
+  zamislis kao slike, POGRESIO SI -- vrati se i promeni.
 - NIKAD ne padaj na default "mišićavi tip u teretani" ako tekst opisuje
   nesto drugo (svakodnevni zivot, emociju, zbunjenost, umor obicnog coveka).
   Taj default je DOZVOLJEN iskljucivo kad tekst DOSLOVNO opisuje VAMIT-5
-  trening pokret.
+  trening pokret, i cak i tada svaki takav segment mora imati RAZLICIT
+  konkretan pokret i razlicit kadar od svakog drugog treninga-segmenta.
+- Pre nego sto vratis odgovor, mentalno prodji kroz sve {segment_count}
+  promptove jedan po jedan i proveri da nijedna dva ne opisuju vizuelno
+  slicnu scenu. Ovo pravilo je vaznije od bilo kog drugog u ovom uputstvu.
 
 STIL (primeni na SVAKU scenu, bez obzira na sadrzaj) -- ovo je JEDNAKO
 VAZNO kao i sadrzaj scene, procitaj pazljivo:
-FOTOREALISTICNO, kao stvarna fotografija snimljena profesionalnim DSLR
-fotoaparatom ili modernim telefonom -- NE 3D render, NE CGI, NE "video
-game" izgled, NE preterano poliran/uljan/plastican izgled koze. Koza mora
-izgledati kao PRAVA LJUDSKA KOZA -- matirana, sa prirodnom teksturom, NE
-sjajna/masna/plasticna. Prirodno, realisticno osvetljenje (moze biti tamna
-prostorija sa suptilnim zelenim akcentnim svetlom, ali izvor svetla i senke
-moraju delovati fizicki verovatno, ne kao render). Zamisli da opisujes
-kadar iz autenticne fitnes fotografije ili amaterskog telefonskog snimka
-iz teretane -- NE filmski poster, NE video-igra, NE hiper-stilizovana CGI
-scena. Vertikalan 9:16 kadar.
+HIPERREALISTICNO, neprepoznatljivo od stvarne fotografije snimljene
+profesionalnim DSLR fotoaparatom ili modernim telefonom -- NE 3D render, NE
+CGI, NE "video game" izgled, NE preterano poliran/uljan/plastican izgled
+koze. Koza mora izgledati kao PRAVA LJUDSKA KOZA -- matirana, sa prirodnom
+teksturom, porama, sitnim nesavrsenostima, NE sjajna/masna/plasticna.
+
+ANATOMSKA TACNOST JE OBAVEZNA -- ovo je cest AI problem, budi eksplicitan:
+tacno 5 prstiju na svakoj saci, prirodne proporcije tela, prirodni oblik
+lica bez izoblicenja, ruke i noge u anatomski moguc polozaj, bez visak/
+manjak udova ili prstiju, lice simetricno i realno. Uvek dodaj u prompt:
+"anatomically correct hands with five fingers, natural body proportions,
+no distorted limbs, no extra or missing fingers, photorealistic human
+face and body, indistinguishable from a real photograph".
+
+Prirodno, realisticno osvetljenje (moze biti tamna prostorija sa suptilnim
+zelenim akcentnim svetlom, ali izvor svetla i senke moraju delovati fizicki
+verovatno, ne kao render). Zamisli da opisujes kadar iz autenticne fitnes
+fotografije ili amaterskog telefonskog snimka -- NE filmski poster, NE
+video-igra, NE hiper-stilizovana CGI scena. Vertikalan 9:16 kadar.
 
 Vrati ISKLJUCIVO validan JSON (bez markdown ograda), u formatu:
 {{"segments": [{{"start": 0, "end": 2, "video_prompt_english": "..."}}, ...]}}
@@ -86,11 +118,11 @@ nešto.
 """
 
 
-def _anthropic_call(user_content: str) -> str:
+def _anthropic_call(user_content: str, segment_count: int) -> str:
     body = json.dumps({
         "model": MODEL,
         "max_tokens": 3000,
-        "system": SYSTEM_PROMPT.format(segment_count=EDU_SEGMENT_COUNT),
+        "system": SYSTEM_PROMPT.format(segment_count=segment_count),
         "messages": [{"role": "user", "content": user_content}],
     }).encode("utf-8")
 
@@ -127,9 +159,10 @@ def _parse_json(raw: str) -> dict:
 # svih pokusaja) -- namerno RAZLICITE jedna od druge da se izbegne
 # ponavljanje istog klipa, ali ovo je krajnja mera, ne normalan put
 _PHOTOREAL_SUFFIX = (
-    ", photorealistic, shot on DSLR camera, natural matte skin texture, "
+    ", hyperrealistic, shot on DSLR camera, natural matte skin texture, "
     "NOT CGI, NOT 3D render, NOT shiny or oily skin, authentic candid "
-    "fitness photography style"
+    "fitness photography style, anatomically correct hands with five "
+    "fingers, natural body proportions, no distorted limbs"
 )
 
 _FALLBACK_PROMPTS = [
@@ -149,12 +182,12 @@ _FALLBACK_PROMPTS = [
 ]
 
 
-def _fallback_equal_split(num_sentences: int) -> list[dict]:
+def _fallback_equal_split(num_sentences: int, segment_count: int) -> list[dict]:
     """Ako Claude ne vrati validnu podelu, napravi prostu ravnomernu podelu
     umesto da ceo workflow pukne -- ali sa RAZLICITIM promptovima po
     segmentu, ne istim ponovljenim, da se klipovi ne dupliraju vizuelno."""
     print("UPOZORENJE: Claude segmentacija nije uspela, koristim rezervnu podelu.")
-    n = min(EDU_SEGMENT_COUNT, num_sentences) or 1
+    n = min(segment_count, num_sentences) or 1
     base = num_sentences // n
     remainder = num_sentences % n
     segments, idx = [], 0
@@ -183,7 +216,7 @@ def _validate_segments(segments: list[dict], num_sentences: int) -> bool:
     return expected_start == num_sentences
 
 
-def split_into_segments(sentences: list[str]) -> list[dict]:
+def split_into_segments(sentences: list[str], segment_count: int) -> list[dict]:
     numbered = "\n".join(f"{i}: {s}" for i, s in enumerate(sentences))
     user_content = (
         f"Skripta (recenice numerisane):\n{numbered}\n\n"
@@ -195,7 +228,7 @@ def split_into_segments(sentences: list[str]) -> list[dict]:
     last_err = None
     for attempt in range(5):
         try:
-            raw = _anthropic_call(user_content)
+            raw = _anthropic_call(user_content, segment_count)
             data = _parse_json(raw)
             segments = data.get("segments", [])
             if _validate_segments(segments, len(sentences)):
@@ -205,4 +238,4 @@ def split_into_segments(sentences: list[str]) -> list[dict]:
             continue
 
     print(f"UPOZORENJE: segmentacija nije validna posle 5 pokusaja: {last_err}")
-    return _fallback_equal_split(len(sentences))
+    return _fallback_equal_split(len(sentences), segment_count)
