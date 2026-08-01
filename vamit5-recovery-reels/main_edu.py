@@ -67,7 +67,8 @@ def main():
             audio_dur = assemble._ffprobe_duration(audio_path)
 
             sentences = _split_sentences(episode["narration_serbian"])
-            segments = edu_content.split_into_segments(sentences)
+            target_segment_count = edu_content.compute_segment_count(audio_dur)
+            segments = edu_content.split_into_segments(sentences, target_segment_count)
             print(f"Podeljeno na {len(segments)} AI video segmenata")
 
             base_video_path = os.path.join(tmp, "edu_base.mp4")
