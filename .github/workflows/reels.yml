@@ -1,11 +1,14 @@
-name: VAMIT-5 Edukativni Reels (AI anatomija)
+name: VAMIT-5 Recovery Reels
 
 on:
   schedule:
-    # 2x dnevno, razmaknuto od obicnog reels rasporeda (koji je 08h/18h
-    # po srpskom vremenu) -- ovde 12h i 20h po srpskom letnjem vremenu (UTC+2)
-    - cron: "0 10 * * *"
-    - cron: "0 18 * * *"
+    # PRIVREMENO smanjeno na 2x dnevno (umesto 10x) -- nov nalog bez
+    # istorije koji odmah objavljuje 10x/dan preko API-ja izgleda algoritmu
+    # kao spam pattern i moze biti razlog za 0 pregleda van pratilaca.
+    # Vracamo postepeno na vise kad nalog izgradi malo poverenja/istorije
+    # (obicno 2-3 nedelje). 08:00 i 18:00 po srpskom letnjem vremenu (UTC+2)
+    - cron: "0 6 * * *"
+    - cron: "0 16 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -14,7 +17,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: vamit5-recovery-reels
@@ -33,19 +36,16 @@ jobs:
       - name: Instaliraj Python zavisnosti
         run: pip install -r requirements.txt
 
-      - name: Pokreni generisanje i objavu (edukativni)
+      - name: Pokreni generisanje i objavu
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
-          HIGGSFIELD_API_KEY: ${{ secrets.HIGGSFIELD_API_KEY }}
-          HIGGSFIELD_API_SECRET: ${{ secrets.HIGGSFIELD_API_SECRET }}
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_BUSINESS_ACCOUNT_ID: ${{ secrets.IG_BUSINESS_ACCOUNT_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
-          ALLOWED_UTC_HOUR_WINDOWS: ""
-        run: python main_edu.py
+          ALLOWED_UTC_HOUR_WINDOWS: ""  # prazno = uvek dozvoljeno, tacno vreme kontrolisu cron termini iznad
+        run: python main.py
