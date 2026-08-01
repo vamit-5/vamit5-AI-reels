@@ -1,0 +1,51 @@
+name: VAMIT-5 Edukativni Reels (AI anatomija)
+
+on:
+  schedule:
+    # 2x dnevno, razmaknuto od obicnog reels rasporeda (koji je 08h/18h
+    # po srpskom vremenu) -- ovde 12h i 20h po srpskom letnjem vremenu (UTC+2)
+    - cron: "0 10 * * *"
+    - cron: "0 18 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: vamit5-recovery-reels
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instaliraj ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Instaliraj Python zavisnosti
+        run: pip install -r requirements.txt
+
+      - name: Pokreni generisanje i objavu (edukativni)
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          HIGGSFIELD_API_KEY: ${{ secrets.HIGGSFIELD_API_KEY }}
+          HIGGSFIELD_API_SECRET: ${{ secrets.HIGGSFIELD_API_SECRET }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_BUSINESS_ACCOUNT_ID: ${{ secrets.IG_BUSINESS_ACCOUNT_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          ALLOWED_UTC_HOUR_WINDOWS: ""
+        run: python main_edu.py
