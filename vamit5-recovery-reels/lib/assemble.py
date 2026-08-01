@@ -77,6 +77,41 @@ def _split_sentences(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+MAX_WORDS_PER_CAPTION = 7
+
+
+def _split_caption_chunks(text: str) -> list[str]:
+    """Deli tekst na kratke caption komade -- prvo po recenicama, pa svaku
+    predugu recenicu dalje deli na manje delove (na zarezima ako postoje,
+    inace na sredini) da caption ne stoji predugo nepromenjen na ekranu."""
+    chunks = []
+    for sentence in _split_sentences(text):
+        words = sentence.split()
+        if len(words) <= MAX_WORDS_PER_CAPTION:
+            chunks.append(sentence)
+            continue
+
+        # probaj podelu na zarezima prvo (prirodnije pauze u govoru)
+        comma_parts = [p.strip() for p in sentence.split(",") if p.strip()]
+        if len(comma_parts) > 1:
+            buf = ""
+            for part in comma_parts:
+                candidate = f"{buf}, {part}".strip(", ") if buf else part
+                if len(candidate.split()) > MAX_WORDS_PER_CAPTION and buf:
+                    chunks.append(buf)
+                    buf = part
+                else:
+                    buf = candidate
+            if buf:
+                chunks.append(buf)
+        else:
+            # nema zareza -- prepolovi po broju reci
+            mid = len(words) // 2
+            chunks.append(" ".join(words[:mid]))
+            chunks.append(" ".join(words[mid:]))
+    return chunks
+
+
 def _make_caption_segment(segment_text: str, out_png: str):
     segment_text = segment_text.upper().rstrip(".!?")
     highlight = _find_highlight(segment_text).upper()
@@ -150,7 +185,7 @@ def _make_caption_segment(segment_text: str, out_png: str):
                     [x - 10, y - 6, x + w + 10, y + line_height - 20],
                     radius=14, fill=GREEN_FILL,
                 )
-                draw.text((x, y), text, font=font, fill=(10, 10, 10, 255))
+                draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
             else:
                 draw.text((x, y), text, font=font, fill=(255, 255, 255, 255),
                           stroke_width=2, stroke_fill=(0, 0, 0, 255))
@@ -218,11 +253,11 @@ def finalize(base_video_path: str, audio_path: str, narration_text: str,
     mockup_start = max(0.0, audio_dur - MOCKUP_DISPLAY_SECONDS) if mockup_path else None
 
 
-    # caption koji PRATI govor -- podeli naraciju na recenice, svaka dobija
-    # svoj overlay PNG i svoj vremenski prozor (srazmeran duzini teksta).
-    # Ako mockup slika postoji, captioni se ORESECAJU pre nego sto ona
-    # pocne da se prikazuje (da se ne preklapaju na istom mestu)
-    sentences = _split_sentences(narration_text)
+    # caption koji PRATI govor -- podeli naraciju na KRATKE delove (ne cele
+    # duge recenice), svaki dobija svoj overlay PNG i svoj vremenski prozor
+    # (srazmeran duzini teksta). Ako mockup slika postoji, captioni se
+    # ORESECAJU pre nego sto ona pocne da se prikazuje.
+    sentences = _split_caption_chunks(narration_text)
     raw_timings = _segment_timings(sentences, audio_dur)
 
     timings, segment_pngs = [], []
