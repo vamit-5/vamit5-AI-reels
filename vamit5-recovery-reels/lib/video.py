@@ -23,7 +23,8 @@ DOP_LITE_URL = "https://platform.higgsfield.ai/higgsfield-ai/dop/lite"
 STATUS_URL_TMPL = "https://platform.higgsfield.ai/requests/{request_id}/status"
 
 POLL_INTERVAL_SECONDS = 8
-MAX_POLL_MINUTES = 12
+MAX_POLL_MINUTES = 18
+MAX_SUBMIT_RETRIES = 2  # ako istekne vreme, probaj ponovo od nule (nov seed)
 
 
 def _headers():
@@ -93,7 +94,7 @@ def _wait_for_job(submit_response):
         if st in ("failed", "nsfw", "error"):
             raise RuntimeError(f"Higgsfield generisanje nije uspelo: {job}")
         # queued / in_progress -> nastavi da ceka
-    raise RuntimeError("Higgsfield generisanje je isteklo (timeout) -- probaj ponovo")
+    raise TimeoutError("Higgsfield generisanje je isteklo (timeout)")
 
 
 def _extract_url_from_job(job):
@@ -132,6 +133,46 @@ def _download(url, out_path):
         f.write(resp.read())
 
 
+def _generate_image(image_prompt: str, rng) -> str:
+    for attempt in range(MAX_SUBMIT_RETRIES + 1):
+        submit_image = _post(SOUL_URL, {
+            "params": {
+                "prompt": image_prompt,
+                "quality": "1080p",
+                "batch_size": 1,
+                "enhance_prompt": False,  # ne dozvoljavamo Higgsfield-u da sam dodaje "cinematic" stilizaciju
+                "style_strength": 1,
+                "width_and_height": "1536x1536",
+                "seed": rng.randint(1, 1_000_000),
+            }
+        })
+        try:
+            image_job = _wait_for_job(submit_image)
+            return _extract_url_from_job(image_job)
+        except TimeoutError:
+            print(f"UPOZORENJE: generisanje slike isteklo, pokusaj {attempt + 1}/{MAX_SUBMIT_RETRIES + 1}")
+            continue
+    raise RuntimeError("Higgsfield generisanje slike nije uspelo posle vise pokusaja (timeout)")
+
+
+def _generate_video_from_image(video_prompt: str, image_url: str, rng) -> str:
+    for attempt in range(MAX_SUBMIT_RETRIES + 1):
+        submit_video = _post(DOP_LITE_URL, {
+            "prompt": video_prompt,
+            "motions": [],
+            "image_url": image_url,
+            "enhance_prompt": False,  # ne dozvoljavamo Higgsfield-u da sam dodaje "cinematic" stilizaciju
+            "seed": rng.randint(1, 1_000_000),
+        })
+        try:
+            video_job = _wait_for_job(submit_video)
+            return _extract_url_from_job(video_job)
+        except TimeoutError:
+            print(f"UPOZORENJE: generisanje videa isteklo, pokusaj {attempt + 1}/{MAX_SUBMIT_RETRIES + 1}")
+            continue
+    raise RuntimeError("Higgsfield generisanje videa nije uspelo posle vise pokusaja (timeout)")
+
+
 def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) -> str:
     # KRITICNO: eksplicitno saljemo NASUMICAN seed na SVAKI poziv (i za
     # sliku i za video, odvojeno) -- bez ovoga Higgsfield ume da koristi
@@ -140,29 +181,8 @@ def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) 
     # OS izvor entropije (ne obican pseudo-random), maksimalna nasumicnost.
     rng = random.SystemRandom()
 
-    submit_image = _post(SOUL_URL, {
-        "params": {
-            "prompt": image_prompt,
-            "quality": "1080p",
-            "batch_size": 1,
-            "enhance_prompt": False,  # iskljuceno -- ne dozvoljavamo Higgsfield-u da sam dodaje "cinematic" stilizaciju
-            "style_strength": 1,
-            "width_and_height": "1536x1536",
-            "seed": rng.randint(1, 1_000_000),
-        }
-    })
-    image_job = _wait_for_job(submit_image)
-    image_url = _extract_url_from_job(image_job)
-
-    submit_video = _post(DOP_LITE_URL, {
-        "prompt": video_prompt,
-        "motions": [],
-        "image_url": image_url,
-        "enhance_prompt": False,  # iskljuceno -- ne dozvoljavamo Higgsfield-u da sam dodaje "cinematic" stilizaciju
-        "seed": rng.randint(1, 1_000_000),
-    })
-    video_job = _wait_for_job(submit_video)
-    video_url = _extract_url_from_job(video_job)
+    image_url = _generate_image(image_prompt, rng)
+    video_url = _generate_video_from_image(video_prompt, image_url, rng)
 
     _download(video_url, out_path)
     return out_path
