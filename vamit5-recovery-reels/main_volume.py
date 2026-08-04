@@ -13,6 +13,7 @@ import datetime
 import os
 import random
 import sys
+import time
 import tempfile
 import traceback
 from zoneinfo import ZoneInfo
@@ -96,13 +97,23 @@ def _pick_next_folder_and_video(state: dict):
 def main():
     is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
 
-    if is_manual:
-        print("Rucno pokretanje -- preskacem lock proveru (za brzo uzastopno testiranje).")
-    else:
+    # LOCK VAZI UVEK (i za rucna pokretanja) -- ovo je jedina prava zastita
+    # od dva pokretanja koja se preklapaju i biraju isti snimak. Ako je
+    # zauzet, sacekaj kratko i probaj ponovo par puta (rucno pokretanje
+    # ne treba dugo da ceka, ali NE SME da preskoci lock potpuno)
+    acquired = False
+    for attempt in range(6):
         acquired = lock.try_acquire()
-        if not acquired:
-            print("Lock zauzet od strane drugog pokretanja -- tiho izlazim.")
-            return
+        if acquired:
+            break
+        if is_manual:
+            print(f"Lock zauzet, cekam 10s i probam ponovo ({attempt + 1}/6)...")
+            time.sleep(10)
+        else:
+            break
+    if not acquired:
+        print("Lock zauzet od strane drugog pokretanja -- tiho izlazim.")
+        return
 
     try:
         st = state_lib.load_state()
