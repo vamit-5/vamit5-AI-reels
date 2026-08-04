@@ -1,0 +1,48 @@
+name: VAMIT-5 Volumen Reels
+
+on:
+  schedule:
+    # Svakih 5 min, tokom celog moguceg 07:00-00:00 srpskog prozora (i leto
+    # i zima, sat unutar main_volume.py precizno odredjuje da li je STVARNO
+    # vreme za objavu -- ovo je samo "budilnik" koji cesto proverava)
+    - cron: "*/5 5-22 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: vamit5-recovery-reels
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instaliraj ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Instaliraj Python zavisnosti
+        run: pip install -r requirements.txt
+
+      - name: Pokreni generisanje i objavu (volumen)
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_BUSINESS_ACCOUNT_ID: ${{ secrets.IG_BUSINESS_ACCOUNT_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          GDRIVE_FOLDER_MUTE_TEXT: ${{ secrets.GDRIVE_FOLDER_MUTE_TEXT }}
+          GDRIVE_FOLDER_KEEP_TEXT: ${{ secrets.GDRIVE_FOLDER_KEEP_TEXT }}
+          GDRIVE_FOLDER_MUTE_NOTEXT: ${{ secrets.GDRIVE_FOLDER_MUTE_NOTEXT }}
+        run: python main_volume.py
