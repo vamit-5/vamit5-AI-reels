@@ -19,6 +19,9 @@ MODE_MUTE_MUSIC_NOTEXT = "mute_music_notext"
 # folder_id se cita iz GitHub Secrets (setuj: GDRIVE_FOLDER_MUTE_TEXT,
 # GDRIVE_FOLDER_KEEP_TEXT, GDRIVE_FOLDER_MUTE_NOTEXT)
 # needs_voice: da li se dodaje ElevenLabs naracija (iz lib/scripts.py pool-a)
+# REDOSLED U OVOJ LISTI = REDOSLED ROTACIJE (folder1 -> folder2 -> folder3 ->
+# ponovo folder1...). needs_voice: da li se dodaje ElevenLabs naracija
+# (iz lib/scripts.py pool-a)
 FOLDERS = [
     {"key": "mute_text", "folder_id": os.environ.get("GDRIVE_FOLDER_MUTE_TEXT", ""), "mode": MODE_MUTE_MUSIC_TEXT, "needs_voice": True},
     {"key": "keep_text", "folder_id": os.environ.get("GDRIVE_FOLDER_KEEP_TEXT", ""), "mode": MODE_KEEP_TEXT, "needs_voice": False},
