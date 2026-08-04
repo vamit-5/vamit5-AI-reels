@@ -1,1 +1,12 @@
-"last_volume_post_at": null,
+{
+  "next_script_index": 0,
+  "last_video_id": null,
+  "last_audio_id": null,
+  "next_edu_script_index": 0,
+  "last_edu_audio_id": null,
+  "last_volume_video_id": null,
+  "last_volume_audio_id": null,
+  "next_volume_caption_index": 0,
+  "last_volume_post_at": null,
+  "next_volume_script_index": 0
+}
