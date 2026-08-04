@@ -18,6 +18,8 @@ def load_state():
         return {
             "next_script_index": 0, "last_video_id": None, "last_audio_id": None,
             "next_edu_script_index": 0, "last_edu_audio_id": None,
+            "last_volume_video_id": None, "last_volume_audio_id": None,
+            "next_volume_caption_index": 0, "last_volume_post_at": None,
         }
     with open(STATE_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -26,6 +28,10 @@ def load_state():
     data.setdefault("last_audio_id", None)
     data.setdefault("next_edu_script_index", 0)
     data.setdefault("last_edu_audio_id", None)
+    data.setdefault("last_volume_video_id", None)
+    data.setdefault("last_volume_audio_id", None)
+    data.setdefault("next_volume_caption_index", 0)
+    data.setdefault("last_volume_post_at", None)
     return data
 
 
