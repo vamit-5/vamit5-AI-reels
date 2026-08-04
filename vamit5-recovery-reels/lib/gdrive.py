@@ -1,7 +1,12 @@
 """
-Cita fajlove iz Google Drive foldera (video snimci + mp3 muzika, isti folder)
-preko Service Account-a, rotira ih redom (bez ponavljanja istog fajla dva
-puta zaredom) i preuzima izabrani fajl lokalno.
+Cita fajlove iz Google Drive foldera preko Service Account-a, rotira ih
+redom (bez ponavljanja istog fajla dva puta zaredom) i preuzima izabrani
+fajl lokalno.
+
+Podrzava VISE razlicitih foldera (predaje se folder_id eksplicitno svakoj
+funkciji) -- koristi se za: originalni folder (video+muzika za stari
+edukativni/higgsfield tok), i 3 nova "volumen" foldera (razlicita pravila
+za zvuk/tekst po folderu).
 
 Potrebne biblioteke: google-api-python-client, google-auth
 """
@@ -13,25 +18,34 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
-FOLDER_ID = os.environ["GDRIVE_FOLDER_ID"]
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+
+# glavni (originalni) folder -- i dalje se koristi za MUZIKU u svim tokovima
+FOLDER_ID = os.environ["GDRIVE_FOLDER_ID"]
+
+_service = None
 
 
 def _get_service():
-    raw_json = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
-    info = json.loads(raw_json)
-    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-    return build("drive", "v3", credentials=creds)
+    global _service
+    if _service is None:
+        raw_json = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
+        info = json.loads(raw_json)
+        creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        _service = build("drive", "v3", credentials=creds)
+    return _service
 
 
-def list_files():
-    """Vraca sve fajlove iz foldera, podeljene na video i audio liste (imena fajlova)."""
+def list_files(folder_id: str = None):
+    """Vraca sve fajlove iz DATOG foldera (ili glavnog ako se ne navede),
+    podeljene na video i audio liste."""
+    folder_id = folder_id or FOLDER_ID
     service = _get_service()
     videos, audios = [], []
     page_token = None
     while True:
         resp = service.files().list(
-            q=f"'{FOLDER_ID}' in parents and trashed = false",
+            q=f"'{folder_id}' in parents and trashed = false",
             fields="nextPageToken, files(id, name, mimeType)",
             pageToken=page_token,
         ).execute()
@@ -45,7 +59,6 @@ def list_files():
         page_token = resp.get("nextPageToken")
         if not page_token:
             break
-    # sortiraj po imenu da redosled bude predvidljiv/stabilan izmedju pokretanja
     videos.sort(key=lambda x: x["name"])
     audios.sort(key=lambda x: x["name"])
     return videos, audios
