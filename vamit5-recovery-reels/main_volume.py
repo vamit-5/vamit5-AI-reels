@@ -44,6 +44,11 @@ def _required_interval_minutes(local_now: datetime.datetime) -> float | None:
 
 
 def _should_post_now(state: dict) -> bool:
+    is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+    if is_manual:
+        print("Rucno pokretanje -- zaobilazim proveru razmaka izmedju objava.")
+        return True
+
     now_local = datetime.datetime.now(BELGRADE_TZ)
     interval = _required_interval_minutes(now_local)
     if interval is None:
