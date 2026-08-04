@@ -67,16 +67,30 @@ def _should_post_now(state: dict) -> bool:
     return True
 
 
-def _collect_combined_videos():
-    combined = []
-    for folder in volume_content.FOLDERS:
-        if not folder["folder_id"]:
-            continue
-        videos, _ = gdrive.list_files(folder["folder_id"])
-        for v in videos:
-            combined.append({**v, "mode": folder["mode"], "folder_key": folder["key"]})
-    combined.sort(key=lambda x: (x["folder_key"], x["name"]))
-    return combined
+def _pick_next_folder_and_video(state: dict):
+    """
+    Strogo rotira REDOM kroz foldere (folder1 -> folder2 -> folder3 ->
+    ponovo folder1...), a UNUTAR izabranog foldera bira sledeci video po
+    NJEGOVOJ sopstvenoj rotaciji (odvojeno pracenje po folderu, da se
+    ravnomerno prodje kroz sve klipove u svakom folderu).
+    """
+    available_folders = [f for f in volume_content.FOLDERS if f["folder_id"]]
+    if not available_folders:
+        raise RuntimeError("Nijedan od 3 volumen foldera nije podesen (folder_id prazan).")
+
+    folder_idx = state.get("next_volume_folder_index", 0) % len(available_folders)
+    folder = available_folders[folder_idx]
+
+    videos, _ = gdrive.list_files(folder["folder_id"])
+    if not videos:
+        raise RuntimeError(f"Nema video snimaka u folderu '{folder['key']}'.")
+
+    last_by_folder = state.get("last_volume_video_id_by_folder", {})
+    last_id = last_by_folder.get(folder["key"])
+    video = gdrive.pick_next(videos, last_id)
+
+    video_item = {**video, "mode": folder["mode"], "folder_key": folder["key"]}
+    return video_item, folder_idx, len(available_folders)
 
 
 def main():
@@ -97,11 +111,7 @@ def main():
             lock.release_and_commit([], "chore: volume - nije vreme za objavu, oslobadjam lock")
             return
 
-        combined_videos = _collect_combined_videos()
-        if not combined_videos:
-            raise RuntimeError("Nema nijednog video snimka ni u jednom od 3 volumen foldera.")
-
-        video_item = gdrive.pick_next(combined_videos, st.get("last_volume_video_id"))
+        video_item, folder_idx, folder_count = _pick_next_folder_and_video(st)
         print(f"Video: {video_item['name']} (folder: {video_item['folder_key']}, mode: {video_item['mode']})")
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -165,7 +175,8 @@ def main():
             post_id = instagram.publish_reel(public_url, full_caption)
             print(f"Objavljeno na Instagram, post id: {post_id}")
 
-        st["last_volume_video_id"] = video_item["id"]
+        st.setdefault("last_volume_video_id_by_folder", {})[video_item["folder_key"]] = video_item["id"]
+        st["next_volume_folder_index"] = (folder_idx + 1) % folder_count
         if music_item:
             st["last_volume_audio_id"] = music_item["id"]
         if needs_voice:
