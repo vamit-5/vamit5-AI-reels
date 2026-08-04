@@ -80,10 +80,15 @@ def _collect_combined_videos():
 
 
 def main():
-    acquired = lock.try_acquire()
-    if not acquired:
-        print("Lock zauzet od strane drugog pokretanja -- tiho izlazim.")
-        return
+    is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+
+    if is_manual:
+        print("Rucno pokretanje -- preskacem lock proveru (za brzo uzastopno testiranje).")
+    else:
+        acquired = lock.try_acquire()
+        if not acquired:
+            print("Lock zauzet od strane drugog pokretanja -- tiho izlazim.")
+            return
 
     try:
         st = state_lib.load_state()
