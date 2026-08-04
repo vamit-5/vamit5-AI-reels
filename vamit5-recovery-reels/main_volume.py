@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib import state as state_lib
 from lib import gdrive, volume_content, volume_assemble, cloudinary_upload, instagram, lock, tts
+from lib import assemble as full_assemble
 from lib.scripts import SCRIPTS
 
 BELGRADE_TZ = ZoneInfo("Europe/Belgrade")
@@ -106,6 +107,8 @@ def main():
                 _, audios = gdrive.list_files()  # glavni (originalni) folder -- muzika
                 if audios:
                     music_item = gdrive.pick_next(audios, st.get("last_volume_audio_id"))
+                    # MORA da se zove bas "music_raw.mp3" -- assemble.finalize() ga
+                    # trazi pod tim tacnim imenom da bi automatski umesao muziku
                     music_raw_path = os.path.join(tmp, "music_raw.mp3")
                     gdrive.download_file(music_item["id"], music_raw_path)
                     print(f"Muzika: {music_item['name']}")
@@ -114,40 +117,47 @@ def main():
                 (f["needs_voice"] for f in volume_content.FOLDERS if f["key"] == video_item["folder_key"]),
                 False,
             )
-            voice_path = None
             script_idx = st.get("next_volume_script_index", 0)
+            final_path = os.path.join(tmp, "final.mp4")
+
             if needs_voice:
+                # Folderi "Ugasi ton" i "Ne dodavaj tekst + dodaj muziku":
+                # original zvuk se gasi, ElevenLabs cita skriptu, video se
+                # petlja da traje tacno koliko traje govor, caption PRATI
+                # govor (kao kod AI reels-ova), muzika 15-20% u pozadini.
+                # BEZ starog statickog "natpisa" -- koristi se isti sistem
+                # kao main.py/main_edu.py (lib/assemble.py), samo se ovde
+                # prosledjuje TAJ konkretan (mutiran) Drive snimak.
                 script_text = SCRIPTS[script_idx % len(SCRIPTS)]
                 voice_path = os.path.join(tmp, "voice.mp3")
                 tts.synthesize(script_text, voice_path)
-                print(f"Skripta #{script_idx % len(SCRIPTS)} (glas dodat)")
+                print(f"Skripta #{script_idx % len(SCRIPTS)} (glas + sync caption)")
 
-            needs_caption = video_item["mode"] != volume_content.MODE_MUTE_MUSIC_NOTEXT
-            caption_text = None
-            caption_idx = st.get("next_volume_caption_index", 0)
-            if needs_caption:
-                caption_texts = volume_content.CAPTION_TEXTS
-                caption_text = caption_texts[caption_idx % len(caption_texts)]
-                print(f"Tekst: {caption_text}")
-
-            final_path = os.path.join(tmp, "final.mp4")
-            volume_assemble.assemble_volume(
-                raw_video_path, video_item["mode"], music_raw_path,
-                caption_text, final_path, tmp, voice_path=voice_path,
-            )
+                full_assemble.assemble(
+                    raw_video_path, voice_path,
+                    narration_text=script_text,
+                    out_path=final_path,
+                    tmp_dir=tmp,
+                )
+                ig_caption_text = script_text[:150]
+            else:
+                # Folder "Ostavi ton": NETAKNUTO -- original zvuk, BEZ teksta,
+                # BEZ muzike, BEZ glasa (samo logo + eventualno CTA mockup)
+                volume_assemble.assemble_volume(
+                    raw_video_path, video_item["mode"], None,
+                    None, final_path, tmp,
+                )
+                ig_caption_text = "VAMIT-5"
 
             public_url = cloudinary_upload.upload_video(final_path)
 
-            ig_caption = caption_text or "VAMIT-5"
-            full_caption = f"{ig_caption}{volume_content.FIXED_CTA_BLOCK}\n\n{HASHTAGS}"
+            full_caption = f"{ig_caption_text}{volume_content.FIXED_CTA_BLOCK}\n\n{HASHTAGS}"
             post_id = instagram.publish_reel(public_url, full_caption)
             print(f"Objavljeno na Instagram, post id: {post_id}")
 
         st["last_volume_video_id"] = video_item["id"]
         if music_item:
             st["last_volume_audio_id"] = music_item["id"]
-        if needs_caption:
-            st["next_volume_caption_index"] = caption_idx + 1
         if needs_voice:
             st["next_volume_script_index"] = script_idx + 1
         st["last_volume_post_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
