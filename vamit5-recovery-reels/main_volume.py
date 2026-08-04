@@ -1,0 +1,153 @@
+"""
+Glavni fajl za "volumen" tok -- 46 reels-a dnevno iz 3 Drive foldera
+(razliciti tretman zvuka/teksta po folderu), BEZ ElevenLabs glasa.
+
+Pokrece ga GitHub Actions cesto (na par minuta) tokom celog aktivnog
+prozora (07:00-00:00 po srpskom vremenu) -- ALI stvarno objavljuje samo
+kada je proteklo dovoljno vremena od poslednje objave (samo-regulisuci
+razmak, jer GitHub-ov cron nije precizan na minut). Cilj: ~24 objave u
+prozoru 07-17h (svakih ~25 min) i ~24 objave u prozoru 17-00h (svakih
+~17.5 min).
+"""
+import datetime
+import os
+import random
+import sys
+import tempfile
+import traceback
+from zoneinfo import ZoneInfo
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from lib import state as state_lib
+from lib import gdrive, volume_content, volume_assemble, cloudinary_upload, instagram, lock
+
+BELGRADE_TZ = ZoneInfo("Europe/Belgrade")
+
+WINDOW_A_START, WINDOW_A_END = 7, 17    # 07:00-17:00 -> 24 objave, ~25 min razmak
+WINDOW_B_START, WINDOW_B_END = 17, 24   # 17:00-00:00 -> 24 objave, ~17.5 min razmak
+INTERVAL_A_MIN = 600 / 24  # 25.0
+INTERVAL_B_MIN = 420 / 24  # 17.5
+
+HASHTAGS = "#vamit5 #kettlebell #trening #disciplina #fitness"
+
+
+def _required_interval_minutes(local_now: datetime.datetime) -> float | None:
+    hour = local_now.hour
+    if WINDOW_A_START <= hour < WINDOW_A_END:
+        return INTERVAL_A_MIN
+    if WINDOW_B_START <= hour < WINDOW_B_END:
+        return INTERVAL_B_MIN
+    return None  # van aktivnog prozora
+
+
+def _should_post_now(state: dict) -> bool:
+    now_local = datetime.datetime.now(BELGRADE_TZ)
+    interval = _required_interval_minutes(now_local)
+    if interval is None:
+        print(f"Van aktivnog prozora (lokalno vreme {now_local.strftime('%H:%M')}) -- tiho izlazim.")
+        return False
+
+    last_at = state.get("last_volume_post_at")
+    if not last_at:
+        return True
+
+    last_dt = datetime.datetime.fromisoformat(last_at)
+    elapsed_min = (datetime.datetime.now(datetime.timezone.utc) - last_dt).total_seconds() / 60
+    if elapsed_min < interval:
+        print(f"Prosleklo samo {elapsed_min:.1f} min (treba {interval:.1f} min) -- tiho izlazim.")
+        return False
+    return True
+
+
+def _collect_combined_videos():
+    combined = []
+    for folder in volume_content.FOLDERS:
+        if not folder["folder_id"]:
+            continue
+        videos, _ = gdrive.list_files(folder["folder_id"])
+        for v in videos:
+            combined.append({**v, "mode": folder["mode"], "folder_key": folder["key"]})
+    combined.sort(key=lambda x: (x["folder_key"], x["name"]))
+    return combined
+
+
+def main():
+    acquired = lock.try_acquire()
+    if not acquired:
+        print("Lock zauzet od strane drugog pokretanja -- tiho izlazim.")
+        return
+
+    try:
+        st = state_lib.load_state()
+
+        if not _should_post_now(st):
+            lock.release_and_commit([], "chore: volume - nije vreme za objavu, oslobadjam lock")
+            return
+
+        combined_videos = _collect_combined_videos()
+        if not combined_videos:
+            raise RuntimeError("Nema nijednog video snimka ni u jednom od 3 volumen foldera.")
+
+        video_item = gdrive.pick_next(combined_videos, st.get("last_volume_video_id"))
+        print(f"Video: {video_item['name']} (folder: {video_item['folder_key']}, mode: {video_item['mode']})")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_video_path = os.path.join(tmp, "raw_video.mp4")
+            gdrive.download_file(video_item["id"], raw_video_path)
+
+            needs_music = video_item["mode"] in (
+                volume_content.MODE_MUTE_MUSIC_TEXT, volume_content.MODE_MUTE_MUSIC_NOTEXT,
+            )
+            music_raw_path = None
+            music_item = None
+            if needs_music:
+                _, audios = gdrive.list_files()  # glavni (originalni) folder -- muzika
+                if audios:
+                    music_item = gdrive.pick_next(audios, st.get("last_volume_audio_id"))
+                    music_raw_path = os.path.join(tmp, "music_raw.mp3")
+                    gdrive.download_file(music_item["id"], music_raw_path)
+                    print(f"Muzika: {music_item['name']}")
+
+            needs_caption = video_item["mode"] != volume_content.MODE_MUTE_MUSIC_NOTEXT
+            caption_text = None
+            caption_idx = st.get("next_volume_caption_index", 0)
+            if needs_caption:
+                caption_texts = volume_content.CAPTION_TEXTS
+                caption_text = caption_texts[caption_idx % len(caption_texts)]
+                print(f"Tekst: {caption_text}")
+
+            final_path = os.path.join(tmp, "final.mp4")
+            volume_assemble.assemble_volume(
+                raw_video_path, video_item["mode"], music_raw_path,
+                caption_text, final_path, tmp,
+            )
+
+            public_url = cloudinary_upload.upload_video(final_path)
+
+            ig_caption = caption_text or "VAMIT-5"
+            full_caption = f"{ig_caption}{volume_content.FIXED_CTA_BLOCK}\n\n{HASHTAGS}"
+            post_id = instagram.publish_reel(public_url, full_caption)
+            print(f"Objavljeno na Instagram, post id: {post_id}")
+
+        st["last_volume_video_id"] = video_item["id"]
+        if music_item:
+            st["last_volume_audio_id"] = music_item["id"]
+        if needs_caption:
+            st["next_volume_caption_index"] = caption_idx + 1
+        st["last_volume_post_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        state_lib.save_state(st)
+
+        lock.release_and_commit(
+            [state_lib.STATE_PATH],
+            f"chore: volume objava ({video_item['folder_key']}, post {post_id})",
+        )
+
+    except Exception:
+        traceback.print_exc()
+        lock.release_and_commit([], "chore: release lock posle greske (volume)")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
