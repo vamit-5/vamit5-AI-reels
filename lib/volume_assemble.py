@@ -19,6 +19,11 @@ LOGO_IMAGE_URL = "https://res.cloudinary.com/dqqljgtna/image/upload/v1778767942/
 LOGO_WIDTH = 150
 MUSIC_VOLUME = 0.18
 
+MOCKUP_IMAGE_URL = "https://res.cloudinary.com/dnbjvccgy/image/upload/v1785345583/IMG_0599_lkdady.png"
+MOCKUP_DISPLAY_SECONDS = 6.0
+MOCKUP_WIDTH = 640
+MOCKUP_MIN_VIDEO_DUR = MOCKUP_DISPLAY_SECONDS + 3.0  # ako je video jako kratak, preskoci mockup
+
 
 def _ffprobe_duration(path: str) -> float:
     out = subprocess.run(
@@ -30,15 +35,17 @@ def _ffprobe_duration(path: str) -> float:
 
 
 def _fetch_image(url: str, out_path: str, target_width: int):
+    """Vraca (path, width, height) ili None ako preuzimanje ne uspe."""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=30) as resp, open(out_path, "wb") as f:
             f.write(resp.read())
         img = Image.open(out_path).convert("RGBA")
         ratio = target_width / img.width
-        img = img.resize((target_width, int(img.height * ratio)))
+        new_size = (target_width, int(img.height * ratio))
+        img = img.resize(new_size)
         img.save(out_path)
-        return out_path
+        return out_path, new_size[0], new_size[1]
     except Exception:
         return None
 
@@ -90,12 +97,37 @@ def _make_caption_overlay(caption_text: str, out_png: str):
 
 
 def assemble_volume(raw_video_path: str, mode: str, music_raw_path: str | None,
-                     caption_text: str | None, out_path: str, tmp_dir: str) -> str:
-    video_dur = _ffprobe_duration(raw_video_path)
+                     caption_text: str | None, out_path: str, tmp_dir: str,
+                     voice_path: str | None = None) -> str:
+    # ako ima glasa, VIDEO se petlja da traje TACNO koliko traje govor
+    # (nezavisno od prirodne duzine sirovog snimka); inace koristi
+    # prirodnu duzinu snimka kao pre
+    if voice_path:
+        target_dur = _ffprobe_duration(voice_path)
+        raw_dur = _ffprobe_duration(raw_video_path)
+        loops_needed = max(1, int(target_dur // raw_dur) + 1)
+        looped_video_path = os.path.join(tmp_dir, "video_looped_for_voice.mp4")
+        subprocess.run(
+            ["ffmpeg", "-y", "-stream_loop", str(loops_needed - 1), "-i", raw_video_path,
+             "-t", str(target_dur), "-an", "-c:v", "libx264", "-preset", "veryfast",
+             looped_video_path],
+            check=True, capture_output=True,
+        )
+        video_path = looped_video_path
+        video_dur = target_dur
+    else:
+        video_path = raw_video_path
+        video_dur = _ffprobe_duration(raw_video_path)
 
-    inputs = ["-i", raw_video_path]
+    # mockup CTA slika samo ako je video dovoljno dugacak da ima smisla
+    # (inace bi progutala skoro ceo kratak snimak)
+    show_mockup = video_dur >= MOCKUP_MIN_VIDEO_DUR
+    mockup_start = max(0.0, video_dur - MOCKUP_DISPLAY_SECONDS) if show_mockup else None
+
+    inputs = ["-i", video_path]
     idx = 1
-    caption_idx = logo_idx = music_idx = None
+    caption_idx = logo_idx = music_idx = voice_idx = mockup_idx = None
+    mockup_h = 0
 
     if caption_text:
         caption_png = _make_caption_overlay(caption_text, os.path.join(tmp_dir, "caption.png"))
@@ -103,11 +135,19 @@ def assemble_volume(raw_video_path: str, mode: str, music_raw_path: str | None,
         caption_idx = idx
         idx += 1
 
-    logo_path = _fetch_image(LOGO_IMAGE_URL, os.path.join(tmp_dir, "logo.png"), LOGO_WIDTH)
-    if logo_path:
-        inputs += ["-i", logo_path]
+    logo_result = _fetch_image(LOGO_IMAGE_URL, os.path.join(tmp_dir, "logo.png"), LOGO_WIDTH)
+    if logo_result:
+        inputs += ["-i", logo_result[0]]
         logo_idx = idx
         idx += 1
+
+    if show_mockup:
+        mockup_result = _fetch_image(MOCKUP_IMAGE_URL, os.path.join(tmp_dir, "mockup.png"), MOCKUP_WIDTH)
+        if mockup_result:
+            inputs += ["-i", mockup_result[0]]
+            mockup_idx = idx
+            mockup_h = mockup_result[2]
+            idx += 1
 
     if music_raw_path:
         music_dur_raw = _ffprobe_duration(music_raw_path)
@@ -122,6 +162,11 @@ def assemble_volume(raw_video_path: str, mode: str, music_raw_path: str | None,
         music_idx = idx
         idx += 1
 
+    if voice_path:
+        inputs += ["-i", voice_path]
+        voice_idx = idx
+        idx += 1
+
     filter_parts = [
         f"[0:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
         f"crop={WIDTH}:{HEIGHT}[base]",
@@ -129,16 +174,45 @@ def assemble_volume(raw_video_path: str, mode: str, music_raw_path: str | None,
     last_v = "base"
 
     if caption_idx is not None:
-        filter_parts.append(f"[{last_v}][{caption_idx}:v]overlay=0:0[vcap]")
+        # caption nestaje PRE nego sto krene mockup slika (da se ne preklapaju)
+        if mockup_start is not None:
+            enable_expr = f":enable='lt(t,{mockup_start:.2f})'"
+        else:
+            enable_expr = ""
+        filter_parts.append(f"[{last_v}][{caption_idx}:v]overlay=0:0{enable_expr}[vcap]")
         last_v = "vcap"
     if logo_idx is not None:
-        filter_parts.append(f"[{last_v}][{logo_idx}:v]overlay=30:50[vlogo]")
+        # logo sakriven dok traje mockup CTA (da se ne preklapaju)
+        if mockup_start is not None:
+            enable_expr = f":enable='lt(t,{mockup_start:.2f})'"
+        else:
+            enable_expr = ""
+        filter_parts.append(f"[{last_v}][{logo_idx}:v]overlay=30:50{enable_expr}[vlogo]")
         last_v = "vlogo"
+    if mockup_idx is not None:
+        ig_bottom_safe = 320
+        mockup_y = max(int(HEIGHT * 0.42), HEIGHT - ig_bottom_safe - mockup_h)
+        filter_parts.append(
+            f"[{last_v}][{mockup_idx}:v]overlay=(main_w-overlay_w)/2:{mockup_y}:"
+            f"enable='gte(t,{mockup_start:.2f})'[vmockup]"
+        )
+        last_v = "vmockup"
     filter_parts.append(f"[{last_v}]null[vout]")
 
-    # audio: MUTE_MUSIC_TEXT i MUTE_MUSIC_NOTEXT -- iskljuci original, koristi
-    # muziku. KEEP_TEXT -- zadrzi original zvuk, bez muzike.
-    if mode in ("mute_music_text", "mute_music_notext"):
+    # audio:
+    # - ima glas (voice_path) -> glas (pun volumen) + muzika (ducked 15-20%) mix
+    # - MUTE_MUSIC_TEXT/MUTE_MUSIC_NOTEXT bez glasa -> samo muzika
+    # - KEEP_TEXT -> zadrzi original zvuk snimka, bez muzike/glasa
+    if voice_idx is not None:
+        if music_idx is not None:
+            filter_parts.append(f"[{music_idx}:a]volume={MUSIC_VOLUME}[music_low]")
+            filter_parts.append(
+                f"[{voice_idx}:a][music_low]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+            )
+            audio_map = "[aout]"
+        else:
+            audio_map = f"{voice_idx}:a"
+    elif mode in ("mute_music_text", "mute_music_notext"):
         if music_idx is not None:
             audio_map = f"{music_idx}:a"
         else:
