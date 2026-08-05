@@ -13,6 +13,7 @@ import datetime
 import os
 import random
 import sys
+import shutil
 import time
 import tempfile
 import traceback
@@ -137,9 +138,7 @@ def main():
             raw_video_path = os.path.join(tmp, "raw_video.mp4")
             gdrive.download_file(video_item["id"], raw_video_path)
 
-            needs_music = video_item["mode"] in (
-                volume_content.MODE_MUTE_MUSIC_TEXT, volume_content.MODE_MUTE_MUSIC_NOTEXT,
-            )
+            needs_music = video_item["mode"] == volume_content.MODE_MUTE_MUSIC_TEXT
             music_raw_path = None
             music_item = None
             if needs_music:
@@ -157,16 +156,14 @@ def main():
                 False,
             )
             script_idx = st.get("next_volume_script_index", 0)
+            caption_idx = st.get("next_volume_caption_index", 0)
             final_path = os.path.join(tmp, "final.mp4")
 
             if needs_voice:
-                # Folderi "Ugasi ton" i "Ne dodavaj tekst + dodaj muziku":
-                # original zvuk se gasi, ElevenLabs cita skriptu, video se
-                # petlja da traje tacno koliko traje govor, caption PRATI
-                # govor (kao kod AI reels-ova), muzika 15-20% u pozadini.
-                # BEZ starog statickog "natpisa" -- koristi se isti sistem
-                # kao main.py/main_edu.py (lib/assemble.py), samo se ovde
-                # prosledjuje TAJ konkretan (mutiran) Drive snimak.
+                # Folder "Ugasi ton": original zvuk se gasi, ElevenLabs cita
+                # skriptu, video se petlja da traje tacno koliko traje govor,
+                # caption PRATI govor (kao kod AI reels-ova), muzika 15-20%
+                # u pozadini.
                 script_text = SCRIPTS[script_idx % len(SCRIPTS)]
                 voice_path = os.path.join(tmp, "voice.mp3")
                 tts.synthesize(script_text, voice_path)
@@ -179,13 +176,24 @@ def main():
                     tmp_dir=tmp,
                 )
                 ig_caption_text = script_text[:150]
-            else:
-                # Folder "Ostavi ton": NETAKNUTO -- original zvuk, BEZ teksta,
-                # BEZ muzike, BEZ glasa (samo logo + eventualno CTA mockup)
+
+            elif video_item["mode"] == volume_content.MODE_KEEP_TEXT:
+                # Folder "Ostavi ton": original zvuk ostaje, dodaje se
+                # kratak staticni natpis (rotira u krug), BEZ muzike/glasa
+                caption_text = volume_content.CAPTION_TEXTS[caption_idx % len(volume_content.CAPTION_TEXTS)]
+                print(f"Natpis: {caption_text}")
                 volume_assemble.assemble_volume(
                     raw_video_path, video_item["mode"], None,
-                    None, final_path, tmp,
+                    caption_text, final_path, tmp,
                 )
+                ig_caption_text = caption_text
+
+            else:
+                # Folder "Postavi bez izmena" (ranije "Ne dodavaj tekst..."):
+                # POTPUNO NETAKNUTO -- original video i original zvuk,
+                # bez ikakve obrade (bez teksta, muzike, loga, mockup-a)
+                print("Postavljam original snimak bez ikakve izmene.")
+                shutil.copyfile(raw_video_path, final_path)
                 ig_caption_text = "VAMIT-5"
 
             public_url = cloudinary_upload.upload_video(final_path)
@@ -200,6 +208,8 @@ def main():
             st["last_volume_audio_id"] = music_item["id"]
         if needs_voice:
             st["next_volume_script_index"] = script_idx + 1
+        if video_item["mode"] == volume_content.MODE_KEEP_TEXT:
+            st["next_volume_caption_index"] = caption_idx + 1
         st["last_volume_post_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         state_lib.save_state(st)
 
