@@ -44,9 +44,17 @@ def _required_interval_minutes(local_now: datetime.datetime) -> float | None:
     return None  # van aktivnog prozora
 
 
+def _is_true_manual_click() -> bool:
+    """Pravi rucni klik na 'Run workflow' (bez inputa/podrazumevano 'manual').
+    GitHub-ov ugradjeni cron I spoljasnji cron-job.org budilnik (koji salje
+    source='cron') se NE racunaju kao rucni -- oni MORAJU postovati razmak."""
+    event_name = os.environ.get("GITHUB_EVENT_NAME")
+    trigger_source = os.environ.get("TRIGGER_SOURCE", "manual")
+    return event_name == "workflow_dispatch" and trigger_source == "manual"
+
+
 def _should_post_now(state: dict) -> bool:
-    is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-    if is_manual:
+    if _is_true_manual_click():
         print("Rucno pokretanje -- zaobilazim proveru razmaka izmedju objava.")
         return True
 
@@ -95,7 +103,7 @@ def _pick_next_folder_and_video(state: dict):
 
 
 def main():
-    is_manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+    is_manual = _is_true_manual_click()
 
     # LOCK VAZI UVEK (i za rucna pokretanja) -- ovo je jedina prava zastita
     # od dva pokretanja koja se preklapaju i biraju isti snimak. Ako je
