@@ -1,10 +1,10 @@
 """
-Fiksna lista gotovih skripti (narracija) koje ElevenLabs cita bez izmena.
-Rotiraju se redom (state.json pamti sledeci indeks), krug se ponavlja kad
-se sve iskoriste.
+Fiksne skripte za EDUKATIVNE (AI anatomija) reels-e. Isti princip kao
+lib/scripts.py -- rotiraju se u krug, tekst se NE menja/izmislja, samo se
+segmentira i za svaki deo generise odgovarajuci AI anatomski video.
 """
 
-SCRIPTS = [
+EDU_SCRIPTS = [
     "Kičma ti vrišti, a? Ekipo u Nemačkoj, Austriji, Švajcarskoj, jel vam poznato? Voziš se satima do posla, pa sediš osam, deset sati, pa opet vožnja kući. Ili stojiš u fabrici, sav iskrivljen. I onda te boli kičma, vrat, ramena. Nije to od starosti, bruda, nego od lošeg držanja i nedostatka pokreta. Telo ti se prilagođava položaju u kom najviše provodite vreme, i ako je to pogrbljeno, onda ćete biti pogrbljeni. Nema tu magije. Morate da se istegnete, da ojačate mišiće koji drže kičmu. VAMIT-5 je online zajednica za vas, Balkance u inostranstvu, jedini koji svaki dan stavljamo na raspolaganje potpuno novi trening, 365 dana godišnje. Kettlebell i težina tela, dokazano najefikasniji treninzi. Probajte 7 dana besplatno, link je u BIO. Prestanite da živite sa bolom, majstori.",
     "Sediš sam u stanu, posle posla. Gledaš stare slike, sećaš se ortaka, roštilja pored reke. Ljudi moji, svi to prođemo. Onaj osećaj kad si okružen ljudima, a opet sam. Kad ti fali tvoja ekipa, tvoja muzika, tvoj jezik. Nije lako, stari. Ali ne morate da se zatvorite u četiri zida. Fizička aktivnost je lek za dušu, verujte mi. Izbacite sav taj stres, tu tugu, i osetite se jače. VAMIT-5 je online zajednica Balkanaca u inostranstvu, gde niko nije sam. Trenirate sa ljudima koji prolaze isto što i vi, rade u inostranstvu i hoće da dostignu optimalan ljudski performans. Pridružite nam se, 7 dana je besplatno. Link je u BIO. Niste sami u ovome, ekipo.",
     "Sve si poslao kući, a? Rođaci, znam tu priču. Roditeljima, braći, sestrama, svima si pomogao. I to je za svaku pohvalu, brate. Ali šta je sa tobom? Kad si zadnji put uložio u sebe? U svoje zdravlje, u svoju energiju? Misliš da ćeš moći da šalješ pare kući ako se raspadneš? Nemoj da se lažeš. Tvoje zdravlje je tvoja najveća investicija. VAMIT-5 je online zajednica za vas, Balkance u inostranstvu, jedini koji svaki dan stavljamo na raspolaganje potpuno novi trening, 365 dana godišnje. Jedinstvena govorna motivacija od prve do poslednje sekunde treninga koja ti ne dozvoljava da staneš. Probajte 7 dana besplatno, link u BIO. Vreme je da uložiš u sebe, majstore.",
