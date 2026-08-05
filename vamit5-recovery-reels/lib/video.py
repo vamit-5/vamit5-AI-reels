@@ -38,25 +38,42 @@ def _headers():
     }
 
 
+MAX_SERVER_ERROR_RETRIES = 4  # za privremene (5xx) greske servera, npr. Cloudflare 502
+
+
+def _request_with_retry(url, payload=None, method="GET"):
+    """Salje zahtev. Kod PRIVREMENIH (5xx) gresaka servera automatski
+    pokusava ponovo (sa pauzom) -- npr. Higgsfield/Cloudflare 502/503/504
+    koji EKSPLICITNO kazu "retryable: true" u odgovoru. Kod TRAJNIH (4xx)
+    gresaka (los zahtev, neispravan kljuc, itd.) odmah odustaje."""
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    delay = 15
+    last_err = None
+    for attempt in range(MAX_SERVER_ERROR_RETRIES + 1):
+        req = urllib.request.Request(url, data=body, headers=_headers(), method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode(errors="ignore")
+            if e.code >= 500:
+                last_err = f"{e.code}: {error_body}"
+                if attempt < MAX_SERVER_ERROR_RETRIES:
+                    print(f"UPOZORENJE: Higgsfield server greska {e.code} (privremeno) -- "
+                          f"pokusaj {attempt + 1}/{MAX_SERVER_ERROR_RETRIES + 1}, cekam {delay}s")
+                    time.sleep(delay)
+                    delay = min(delay * 2, 90)
+                    continue
+            raise RuntimeError(f"Higgsfield HTTP greska {e.code} na {url}: {error_body}") from None
+    raise RuntimeError(f"Higgsfield server greska posle {MAX_SERVER_ERROR_RETRIES + 1} pokusaja: {last_err}")
+
+
 def _post(url, payload):
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=body, headers=_headers(), method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode(errors="ignore")
-        raise RuntimeError(f"Higgsfield HTTP greska {e.code} na {url}: {error_body}") from None
+    return _request_with_retry(url, payload=payload, method="POST")
 
 
 def _get(url):
-    req = urllib.request.Request(url, headers=_headers(), method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode(errors="ignore")
-        raise RuntimeError(f"Higgsfield HTTP greska {e.code} na {url}: {error_body}") from None
+    return _request_with_retry(url, method="GET")
 
 
 def _job(resp):
