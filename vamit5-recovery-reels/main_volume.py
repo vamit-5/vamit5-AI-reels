@@ -194,11 +194,12 @@ def main():
                 # bez ikakve obrade (bez teksta, muzike, loga, mockup-a)
                 print("Postavljam original snimak bez ikakve izmene.")
                 shutil.copyfile(raw_video_path, final_path)
-                ig_caption_text = "VAMIT-5"
+                ig_caption_text = ""
 
             public_url = cloudinary_upload.upload_video(final_path)
 
-            full_caption = f"{ig_caption_text}{volume_content.FIXED_CTA_BLOCK}\n\n{HASHTAGS}"
+            separator = "\n\n" if ig_caption_text else ""
+            full_caption = f"{ig_caption_text}{separator}{volume_content.FIXED_CTA_BLOCK}\n\n{HASHTAGS}"
             post_id = instagram.publish_reel(public_url, full_caption)
             print(f"Objavljeno na Instagram, post id: {post_id}")
 
