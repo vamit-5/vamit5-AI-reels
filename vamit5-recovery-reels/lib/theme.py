@@ -12,9 +12,10 @@ import re
 from lib.scripts import SCRIPTS
 
 FIXED_CTA_BLOCK = (
-    "\n\n@vamit5_ @vamit5.athletes\n"
     "Testiraj VAMIT-5 App 7 dana besplatno. Link u BIO.\n"
-    "#joinvamit5"
+    "#joinvamit5\n\n"
+    "@vamit5_\n"
+    "@vamit5.athletes"
 )
 
 MAX_HOOK_WORDS = 14
@@ -40,7 +41,7 @@ def select_from_pool(scripts_pool: list, index: int) -> dict:
 
     hook = _first_sentence(narration)
     caption_intro = _first_two_sentences(narration)
-    caption = f"{caption_intro}{FIXED_CTA_BLOCK}"
+    caption = f"{caption_intro}\n\n{FIXED_CTA_BLOCK}"
 
     return {
         "script_index": idx,
