@@ -16,6 +16,7 @@ da zvuci neprirodno/ubrzano-komicno.
 """
 import json
 import os
+import re
 import subprocess
 import time
 import urllib.request
@@ -43,20 +44,32 @@ def _probe_duration(path: str) -> float:
 
 # Audio tag(ovi) koji se dodaju SAMO u ono sto se salje ElevenLabs-u (rezijska
 # uputstva, model ih NE izgovara) -- ne diraju tekst koji ide u caption/
-# Instagram opis, jer se dodaju ovde, unutar TTS poziva, ne u sam narration_text
-AUDIO_TAG_PREFIX = "[intense] [excited] "
+# Instagram opis, jer se dodaju ovde, unutar TTS poziva, ne u sam narration_text.
+# Rotiraju se KROZ CEO tekst (ne samo na pocetku) da energija ne opadne
+# posle prvih par sekundi na duzim skriptama.
+AUDIO_TAGS = ["[excited]", "[intense]", "[powerful]", "[passionate]", "[determined]", "[energetic]"]
+
+
+def _inject_audio_tags(text: str) -> str:
+    sentences = re.findall(r"[^.!?]+[.!?]?", text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    tagged = []
+    for i, s in enumerate(sentences):
+        tag = AUDIO_TAGS[i % len(AUDIO_TAGS)]
+        tagged.append(f"{tag} {s}")
+    return " ".join(tagged)
 
 
 def _synthesize_at_speed(text: str, out_path: str, speed: float) -> str:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
-    tagged_text = f"{AUDIO_TAG_PREFIX}{text}"
+    tagged_text = _inject_audio_tags(text)
     payload = {
         "text": tagged_text,
         "model_id": "eleven_v3",
         "voice_settings": {
-            "stability": 0.32,   # nize = izrazajniji, dinamicniji ton (manje "ravno")
+            "stability": 0.15,   # jos nize = maksimalno izrazajan, dinamican ton
             "similarity_boost": 0.8,
-            "style": 0.6,        # vise = vise emocije/energije/karaktera u glasu
+            "style": 0.8,        # jos vise = jos vise emocije/energije/karaktera
             "use_speaker_boost": True,
             "speed": speed,
         },
