@@ -1,23 +1,22 @@
 """
-Za svaki segment (grupu recenica) generise AI video preko Higgsfield-a
-(video.generate_episode_video), petlja/sece ga na tacno dodeljeno trajanje,
-i spaja SVE segmente u jedan kontinuirani "silent" video fajl koji tacno
-pokriva celu duzinu audio naracije.
+NOVA VERZIJA: umesto da generise AI video UZIVO preko Higgsfield API-ja
+(skupo, cesto nerealisticno), sada BIRA gotove, unapred napravljene
+klipove iz Google Drive "AI klipovi" foldera (napravljeni preko pravog
+higgsfield.ai sajta, realisticniji kvalitet, jednom placeno kroz
+kredite koje vec imas).
 
-STROGA ZABRANA DUPLIKATA: posle svakog preuzimanja, proverava se da li je
-fajl BIT-PO-BIT identican nekom vec preuzetom klipu U ISTOM VIDEU. Ako
-jeste, generise se ponovo (nov nasumican seed) dok ne bude razlicit,
-najvise MAX_DEDUP_RETRIES puta.
+Za svaki segment (grupu recenica) bira SLEDECI klip u rotaciji (bez
+ponavljanja UNUTAR jednog Reel-a), petlja/sece ga na tacno dodeljeno
+trajanje, i spaja SVE segmente u jedan kontinuiran "silent" video fajl
+koji tacno pokriva celu duzinu audio naracije.
 """
-import hashlib
 import json
 import os
 import subprocess
 
-from lib import video
+from lib import gdrive
 
 MIN_SEGMENT_SECONDS = 2.0
-MAX_DEDUP_RETRIES = 4
 
 
 def _ffprobe_duration(path: str) -> float:
@@ -29,23 +28,15 @@ def _ffprobe_duration(path: str) -> float:
     return float(json.loads(out.stdout)["format"]["duration"])
 
 
-def _file_hash(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def _segment_time_windows(sentences: list[str], segments: list[dict], audio_dur: float):
+def _segment_time_windows(sentences: list[str], boundaries: list[list[int]], audio_dur: float):
     """Racuna (start, end) sekunde za svaki segment, srazmerno ukupnom broju
     karaktera recenica koje taj segment pokriva."""
     char_counts = [len(s) for s in sentences]
     total_chars = sum(char_counts) or 1
 
     windows = []
-    for seg in segments:
-        seg_chars = sum(char_counts[seg["start"]:seg["end"] + 1])
+    for start, end in boundaries:
+        seg_chars = sum(char_counts[start:end + 1])
         windows.append((seg_chars / total_chars) * audio_dur)
 
     durations = [max(MIN_SEGMENT_SECONDS, d) for d in windows]
@@ -59,29 +50,28 @@ def _segment_time_windows(sentences: list[str], segments: list[dict], audio_dur:
     return timings
 
 
-def build_segmented_video(sentences: list[str], segments: list[dict],
-                           audio_dur: float, out_path: str, tmp_dir: str) -> str:
-    timings = _segment_time_windows(sentences, segments, audio_dur)
+def build_segmented_video(sentences: list[str], boundaries: list[list[int]],
+                           audio_dur: float, folder_id: str, last_video_id: str | None,
+                           out_path: str, tmp_dir: str):
+    """Vraca (out_path, novi_last_video_id)."""
+    timings = _segment_time_windows(sentences, boundaries, audio_dur)
+    segment_count = len(boundaries)
+
+    videos, _ = gdrive.list_files(folder_id)
+    if not videos:
+        raise RuntimeError(
+            "Nema nijednog klipa u AI klipovi Drive folderu -- prvo treba "
+            "generisati/dodati pocetnu seriju klipova."
+        )
+
+    picked = gdrive.pick_sequence(videos, last_video_id, segment_count)
 
     clip_paths = []
-    seen_hashes = set()
-    for i, (seg, (start, end)) in enumerate(zip(segments, timings)):
+    for i, ((start, end), video_item) in enumerate(zip(timings, picked)):
         target_dur = end - start
         raw_clip = os.path.join(tmp_dir, f"edu_raw_{i}.mp4")
-
-        for retry in range(MAX_DEDUP_RETRIES + 1):
-            video.generate_episode_video(
-                seg["video_prompt_english"], seg["video_prompt_english"], raw_clip
-            )
-            file_hash = _file_hash(raw_clip)
-            if file_hash not in seen_hashes:
-                seen_hashes.add(file_hash)
-                break
-            print(f"UPOZORENJE: segment {i} identican prethodnom klipu -- "
-                  f"generisem ponovo (pokusaj {retry + 1}/{MAX_DEDUP_RETRIES})")
-        else:
-            print(f"UPOZORENJE: segment {i} i dalje duplikat posle "
-                  f"{MAX_DEDUP_RETRIES} pokusaja, nastavljam sa poslednjom verzijom")
+        gdrive.download_file(video_item["id"], raw_clip)
+        print(f"Segment {i}: {video_item['name']}")
 
         clip_dur = _ffprobe_duration(raw_clip)
         loops_needed = max(1, int(target_dur // clip_dur) + 1)
@@ -94,7 +84,6 @@ def build_segmented_video(sentences: list[str], segments: list[dict],
         )
         clip_paths.append(fitted_clip)
 
-    # spoji sve segmente redom preko ffmpeg concat demuxer-a
     concat_list_path = os.path.join(tmp_dir, "concat_list.txt")
     with open(concat_list_path, "w") as f:
         for p in clip_paths:
@@ -105,4 +94,6 @@ def build_segmented_video(sentences: list[str], segments: list[dict],
          "-c:v", "libx264", "-preset", "veryfast", out_path],
         check=True, capture_output=True,
     )
-    return out_path
+
+    new_last_video_id = picked[-1]["id"]
+    return out_path, new_last_video_id
