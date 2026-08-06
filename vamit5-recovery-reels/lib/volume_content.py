@@ -43,7 +43,8 @@ CAPTION_TEXTS = [
 ]
 
 FIXED_CTA_BLOCK = (
-    "\n\n@vamit5_ @vamit5.athletes\n"
     "Testiraj VAMIT-5 App 7 dana besplatno. Link u BIO.\n"
-    "#joinvamit5"
+    "#joinvamit5\n\n"
+    "@vamit5_\n"
+    "@vamit5.athletes"
 )
