@@ -186,7 +186,7 @@ def _equal_boundaries(num_sentences: int, segment_count: int) -> list[list[int]]
     return boundaries
 
 
-def _split_boundaries(sentences: list[str], segment_count: int) -> list[list[int]]:
+def get_segment_boundaries(sentences: list[str], segment_count: int) -> list[list[int]]:
     numbered = "\n".join(f"{i}: {s}" for i, s in enumerate(sentences))
     user_content = f"Skripta ({len(sentences)} recenica, numerisane):\n{numbered}"
 
@@ -260,7 +260,7 @@ def _generate_scene_prompt(segment_text: str, camera: str, detail: str) -> str:
 
 
 def split_into_segments(sentences: list[str], segment_count: int) -> list[dict]:
-    boundaries = _split_boundaries(sentences, segment_count)
+    boundaries = get_segment_boundaries(sentences, segment_count)
     forced_angles, forced_details = _assign_forced_variety(len(boundaries))
 
     segments = []
