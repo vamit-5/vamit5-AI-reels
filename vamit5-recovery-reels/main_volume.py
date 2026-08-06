@@ -14,6 +14,7 @@ import os
 import random
 import sys
 import shutil
+import subprocess
 import time
 import tempfile
 import traceback
@@ -134,6 +135,18 @@ def main():
         video_item, folder_idx, folder_count = _pick_next_folder_and_video(st)
         print(f"Video: {video_item['name']} (folder: {video_item['folder_key']}, mode: {video_item['mode']})")
 
+        # KRITICNO: pomeri i SACUVAJ rotaciju foldera ODMAH, pre same obrade
+        # -- ako ovaj video/folder posle ovoga padne (npr. Cloudinary
+        # limit), sledeci pokusaj ide na SLEDECI folder, ne zaglavljuje se
+        # beskonacno na istom problematicnom folderu. Lock OSTAJE zauzet
+        # (koristimo commit_only, ne release_and_commit).
+        st["next_volume_folder_index"] = (folder_idx + 1) % folder_count
+        state_lib.save_state(st)
+        lock.commit_only(
+            [state_lib.STATE_PATH],
+            f"chore: volume - rotacija pomerena na sledeci folder ({video_item['folder_key']} izabran)",
+        )
+
         with tempfile.TemporaryDirectory() as tmp:
             raw_video_path = os.path.join(tmp, "raw_video.mp4")
             gdrive.download_file(video_item["id"], raw_video_path)
@@ -192,8 +205,14 @@ def main():
                 # Folder "Postavi bez izmena" (ranije "Ne dodavaj tekst..."):
                 # POTPUNO NETAKNUTO -- original video i original zvuk,
                 # bez ikakve obrade (bez teksta, muzike, loga, mockup-a)
-                print("Postavljam original snimak bez ikakve izmene.")
-                shutil.copyfile(raw_video_path, final_path)
+                print("Postavljam original snimak -- laka kompresija (isti sadrzaj/kadar/zvuk, samo manji fajl da stane na Cloudinary).")
+                subprocess.run(
+                    ["ffmpeg", "-y", "-i", raw_video_path,
+                     "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                     "-c:a", "aac", "-b:a", "192k",
+                     final_path],
+                    check=True, capture_output=True,
+                )
                 ig_caption_text = ""
 
             public_url = cloudinary_upload.upload_video(final_path)
@@ -204,7 +223,6 @@ def main():
             print(f"Objavljeno na Instagram, post id: {post_id}")
 
         st.setdefault("last_volume_video_id_by_folder", {})[video_item["folder_key"]] = video_item["id"]
-        st["next_volume_folder_index"] = (folder_idx + 1) % folder_count
         if music_item:
             st["last_volume_audio_id"] = music_item["id"]
         if needs_voice:
