@@ -27,6 +27,19 @@ from lib import gdrive, volume_content, volume_assemble, cloudinary_upload, inst
 from lib import assemble as full_assemble
 from lib.scripts import SCRIPTS
 
+
+def _caption_from_script(text: str, max_chars: int = 220) -> str:
+    """Uzima pocetak skripte za Instagram opis, ali SAMO cele recenice
+    (nikad ne sece nasred recenice/reci)."""
+    sentences = full_assemble._split_sentences(text)
+    result = ""
+    for s in sentences:
+        candidate = f"{result} {s}".strip() if result else s
+        if len(candidate) > max_chars and result:
+            break
+        result = candidate
+    return result or text[:max_chars]
+
 BELGRADE_TZ = ZoneInfo("Europe/Belgrade")
 
 WINDOW_A_START, WINDOW_A_END = 7, 17    # 07:00-17:00 -> 24 objave, ~25 min razmak
@@ -188,7 +201,7 @@ def main():
                     out_path=final_path,
                     tmp_dir=tmp,
                 )
-                ig_caption_text = script_text[:150]
+                ig_caption_text = _caption_from_script(script_text)
 
             elif video_item["mode"] == volume_content.MODE_KEEP_TEXT:
                 # Folder "Ostavi ton": original zvuk ostaje, dodaje se
