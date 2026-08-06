@@ -90,3 +90,29 @@ def pick_next(items: list, last_id: str | None):
     else:
         idx = 0
     return items[idx]
+
+
+def pick_sequence(items: list, last_id: str | None, count: int):
+    """
+    Vraca 'count' sledecih stavki u rotaciji, GARANTOVANO bez ponavljanja
+    unutar te sekvence (dokle god pool ima bar 'count' stavki). Ako je
+    pool manji od count, ciklus se ponavlja od pocetka kao krajnja mera
+    (bolje ponoviti nego pucanje).
+    """
+    if not items:
+        raise RuntimeError("Nema fajlova u Drive folderu za sekvencu.")
+
+    ids = [i["id"] for i in items]
+    if last_id in ids:
+        start = (ids.index(last_id) + 1) % len(items)
+    else:
+        start = 0
+    ordered = items[start:] + items[:start]
+
+    if count <= len(ordered):
+        return ordered[:count]
+
+    result = []
+    while len(result) < count:
+        result.extend(ordered)
+    return result[:count]
