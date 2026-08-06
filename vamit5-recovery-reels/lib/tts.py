@@ -1,6 +1,8 @@
 """
 Pretvara tekst naracije u audio fajl koristeci ElevenLabs API
-(Eleven Multilingual v2 model, podrzava srpski).
+(Eleven v3 model -- najnoviji, najizrazajniji ElevenLabs model, podrzava
+srpski i "audio tag" rezijske oznake tipa [excited]/[intense] koje menjaju
+TON izgovora bez da menjaju sam izgovoreni tekst).
 
 VOICE_ID mora biti dubok muski glas -- podesi u GitHub Secrets
 (ELEVENLABS_VOICE_ID). Predlog: u ElevenLabs Voice Library pretrazi
@@ -39,15 +41,22 @@ def _probe_duration(path: str) -> float:
     return float(json.loads(out.stdout)["format"]["duration"])
 
 
+# Audio tag(ovi) koji se dodaju SAMO u ono sto se salje ElevenLabs-u (rezijska
+# uputstva, model ih NE izgovara) -- ne diraju tekst koji ide u caption/
+# Instagram opis, jer se dodaju ovde, unutar TTS poziva, ne u sam narration_text
+AUDIO_TAG_PREFIX = "[intense] [excited] "
+
+
 def _synthesize_at_speed(text: str, out_path: str, speed: float) -> str:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
+    tagged_text = f"{AUDIO_TAG_PREFIX}{text}"
     payload = {
-        "text": text,
-        "model_id": "eleven_multilingual_v2",
+        "text": tagged_text,
+        "model_id": "eleven_v3",
         "voice_settings": {
-            "stability": 0.55,
+            "stability": 0.32,   # nize = izrazajniji, dinamicniji ton (manje "ravno")
             "similarity_boost": 0.8,
-            "style": 0.35,
+            "style": 0.6,        # vise = vise emocije/energije/karaktera u glasu
             "use_speaker_boost": True,
             "speed": speed,
         },
