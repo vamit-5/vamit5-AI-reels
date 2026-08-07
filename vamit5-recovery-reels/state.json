@@ -2,8 +2,8 @@
   "next_script_index": 0,
   "last_video_id": null,
   "last_audio_id": null,
-  "next_edu_script_index": 1,
-  "last_edu_audio_id": "1mBbopR8JU2ziog1DWQ68eEd53EQFzA2i",
+  "next_edu_script_index": 2,
+  "last_edu_audio_id": "1ml5jsMft7tfny__MlHX_lmqFW7oEDc3x",
   "last_volume_video_id": "12xHRD0AVyi63XDAGuo-T2jt00PDE0SIf",
   "last_volume_audio_id": "1JrToXmbE7fdEcePmlXRLaW92K5qiqdAj",
   "next_volume_caption_index": 18,
@@ -15,5 +15,8 @@
     "keep_text": "1uCXoQ1y-4arR_SzROf4vGa__vbTEfhjc",
     "mute_notext": "1DDG0V4tc8JomTMYmJPQ5S33iLmJV3NBg"
   },
-  "last_edu_video_by_category": {}
+  "last_edu_video_by_category": {
+    "group": "1NKnawityiVIQVmyK4JdAQkxhifEF3i5g",
+    "closeup": "1K3qJQzOskWw79QYpVVyrxLek6io43pW_"
+  }
 }
