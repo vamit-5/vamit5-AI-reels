@@ -62,14 +62,23 @@ def publish_reel(video_url: str, caption: str) -> str:
     deadline = time.time() + MAX_PROCESSING_WAIT_MINUTES * 60
     while time.time() < deadline:
         status = _get(f"{GRAPH_BASE}/{container_id}", {
-            "fields": "status_code",
+            "fields": "status_code,status",
             "access_token": ACCESS_TOKEN,
         })
         code = status.get("status_code")
         if code == "FINISHED":
             break
         if code == "ERROR":
-            raise RuntimeError(f"Instagram obrada videa nije uspela: {status}")
+            # pokusaj da izvucemo JOS detalja (Meta ponekad vrati opsirniji
+            # opis greske preko debug_token/graph error endpoint-a)
+            try:
+                debug = _get(f"{GRAPH_BASE}/{container_id}", {
+                    "fields": "status_code,status,copyright_check_information",
+                    "access_token": ACCESS_TOKEN,
+                })
+            except Exception:
+                debug = status
+            raise RuntimeError(f"Instagram obrada videa nije uspela: {debug}")
         time.sleep(10)
     else:
         raise RuntimeError("Instagram obrada videa je istekla (timeout)")
