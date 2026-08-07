@@ -50,21 +50,52 @@ def _segment_time_windows(sentences: list[str], boundaries: list[list[int]], aud
     return timings
 
 
-def build_segmented_video(sentences: list[str], boundaries: list[list[int]],
-                           audio_dur: float, folder_id: str, last_video_id: str | None,
-                           out_path: str, tmp_dir: str):
-    """Vraca (out_path, novi_last_video_id)."""
-    timings = _segment_time_windows(sentences, boundaries, audio_dur)
-    segment_count = len(boundaries)
+def _pick_clip_for_category(category: str, all_videos: list, used_ids: set,
+                             last_by_category: dict):
+    """Bira sledeci NEKORISCEN (unutar OVOG Reel-a) klip iz DATE kategorije.
+    Ako ta kategorija nema (dovoljno) klipova, vraca se na ceo pool kao
+    rezervu (bolje ponoviti nego pucanje/prazan segment)."""
+    candidates = gdrive.filter_by_category(all_videos, category)
+    pool = candidates if candidates else all_videos
 
-    videos, _ = gdrive.list_files(folder_id)
-    if not videos:
+    unused = [v for v in pool if v["id"] not in used_ids]
+    if unused:
+        last_id = last_by_category.get(category)
+        ids = [v["id"] for v in unused]
+        if last_id in ids:
+            start_idx = (ids.index(last_id) + 1) % len(unused)
+        else:
+            start_idx = 0
+        chosen = unused[start_idx]
+    else:
+        # sva kategorija vec iskoriscena u ovom Reel-u -- ponovi (retko,
+        # samo kad je pool jos mali)
+        chosen = pool[0]
+
+    used_ids.add(chosen["id"])
+    last_by_category[category] = chosen["id"]
+    return chosen
+
+
+def build_segmented_video(sentences: list[str], boundaries: list[list[int]],
+                           categories: list[str], audio_dur: float, folder_id: str,
+                           last_by_category: dict, out_path: str, tmp_dir: str):
+    """Vraca (out_path, azurirani_last_by_category)."""
+    timings = _segment_time_windows(sentences, boundaries, audio_dur)
+
+    all_videos, _ = gdrive.list_files(folder_id)
+    if not all_videos:
         raise RuntimeError(
             "Nema nijednog klipa u AI klipovi Drive folderu -- prvo treba "
             "generisati/dodati pocetnu seriju klipova."
         )
 
-    picked = gdrive.pick_sequence(videos, last_video_id, segment_count)
+    used_ids = set()
+    picked = []
+    for category in categories:
+        chosen = _pick_clip_for_category(category, all_videos, used_ids, last_by_category)
+        picked.append(chosen)
+        print(f"Kategorija '{category}' -> {chosen['name']}")
 
     clip_paths = []
     for i, ((start, end), video_item) in enumerate(zip(timings, picked)):
@@ -95,5 +126,4 @@ def build_segmented_video(sentences: list[str], boundaries: list[list[int]],
         check=True, capture_output=True,
     )
 
-    new_last_video_id = picked[-1]["id"]
-    return out_path, new_last_video_id
+    return out_path, last_by_category
