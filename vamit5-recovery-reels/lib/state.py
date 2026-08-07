@@ -17,7 +17,7 @@ def load_state():
     if not os.path.exists(STATE_PATH):
         return {
             "next_script_index": 0, "last_video_id": None, "last_audio_id": None,
-            "next_edu_script_index": 0, "last_edu_audio_id": None, "last_edu_video_id": None,
+            "next_edu_script_index": 0, "last_edu_audio_id": None, "last_edu_video_by_category": {},
             "last_volume_video_id": None, "last_volume_audio_id": None,
             "next_volume_caption_index": 0, "last_volume_post_at": None,
             "next_volume_script_index": 0,
@@ -31,7 +31,7 @@ def load_state():
     data.setdefault("last_audio_id", None)
     data.setdefault("next_edu_script_index", 0)
     data.setdefault("last_edu_audio_id", None)
-    data.setdefault("last_edu_video_id", None)
+    data.setdefault("last_edu_video_by_category", {})
     data.setdefault("last_volume_video_id", None)
     data.setdefault("last_volume_audio_id", None)
     data.setdefault("next_volume_caption_index", 0)
