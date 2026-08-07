@@ -1,17 +1,18 @@
 """
 Glavni ulazni fajl za EDUKATIVNE (AI anatomija) reels-e. Pokrece ga
-GitHub Actions, odvojen raspored od main.py (obicni Drive reels-i).
+GitHub Actions, odvojen raspored od main.py/main_volume.py.
 
-Tok:
-1. Pokusaj da zauzmes lock -- ako neko drugi vec radi (bilo koji od dva
-   pipeline-a), tiho izadji (isti lock.txt se deli izmedju oba)
-2. Odaberi sledecu edukativnu skriptu (rotacija u krug, odvojena od
-   obicnih skripti)
+NOVA VERZIJA (bez uzivo Higgsfield API poziva):
+1. Zauzmi lock (deljen sa ostalim tokovima)
+2. Odaberi sledecu edukativnu skriptu (rotacija u krug)
 3. ElevenLabs generise audio (tacan tekst, bez izmena)
-4. Claude API deli naraciju na segmente i smislja AI video prompt za svaki
-5. Higgsfield generise po jedan kratak video za svaki segment (slika+animacija)
+4. Claude API SAMO deli naraciju na segmente (koliko treba, na osnovu
+   duzine audija) -- vise NE generise video promptove
+5. Za svaki segment, BIRA gotov klip iz Drive "AI klipovi" foldera
+   (unapred napravljeni preko pravog higgsfield.ai sajta), bez ponavljanja
+   klipova UNUTAR ovog istog Reel-a
 6. Svi segmenti se spajaju u jedan kontinuiran silent video tacne duzine
-7. Sa Google Drive-a preuzmi sledecu muziku (odvojena rotacija od obicnih)
+7. Sa Google Drive-a (glavni folder) preuzmi sledecu muziku
 8. ffmpeg dodaje caption segmente + muzika (ducked) + logo + CTA mockup
 9. Cloudinary hostuje finalni fajl, Instagram Graph API objavljuje
 10. Upisuje se novo stanje i lock se otkljucava, sve se commit-uje
@@ -30,6 +31,7 @@ from lib.edu_scripts import EDU_SCRIPTS
 from lib.assemble import _split_sentences
 
 HASHTAGS = "#vamit5 #kettlebell #trening #disciplina #fitness"
+AI_CLIPS_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_AI_CLIPS", "")
 
 
 def _in_allowed_window() -> bool:
@@ -50,6 +52,13 @@ def main():
         print("Van dozvoljenog vremenskog prozora -- tiho izlazim (bez objave).")
         return
 
+    if not AI_CLIPS_FOLDER_ID:
+        raise RuntimeError(
+            "GDRIVE_FOLDER_AI_CLIPS nije podesen -- prvo napravi Drive folder "
+            "za gotove AI klipove, podeli ga sa service account-om i dodaj "
+            "GitHub secret."
+        )
+
     acquired = lock.try_acquire()
     if not acquired:
         print("Lock zauzet od strane drugog pokretanja -- tiho izlazim.")
@@ -68,13 +77,22 @@ def main():
 
             sentences = _split_sentences(episode["narration_serbian"])
             target_segment_count = edu_content.compute_segment_count(audio_dur)
-            segments = edu_content.split_into_segments(sentences, target_segment_count)
-            print(f"Podeljeno na {len(segments)} AI video segmenata")
+            boundaries = edu_content.get_segment_boundaries(sentences, target_segment_count)
+            print(f"Podeljeno na {len(boundaries)} segmenata (klipovi iz Drive pool-a)")
+
+            categories = []
+            for start, end in boundaries:
+                segment_text = " ".join(sentences[start:end + 1])
+                categories.append(edu_content.pick_category_for_segment(segment_text))
 
             base_video_path = os.path.join(tmp, "edu_base.mp4")
-            edu_video.build_segmented_video(sentences, segments, audio_dur, base_video_path, tmp)
+            _, updated_last_by_category = edu_video.build_segmented_video(
+                sentences, boundaries, categories, audio_dur,
+                AI_CLIPS_FOLDER_ID, st.get("last_edu_video_by_category", {}),
+                base_video_path, tmp,
+            )
 
-            videos, audios = gdrive.list_files()
+            _, audios = gdrive.list_files()
             music_item = None
             if audios:
                 music_item = gdrive.pick_next(audios, st.get("last_edu_audio_id"))
@@ -97,6 +115,7 @@ def main():
             print(f"Objavljeno na Instagram, post id: {post_id}")
 
         st["next_edu_script_index"] = episode["script_index"] + 1
+        st["last_edu_video_by_category"] = updated_last_by_category
         if music_item:
             st["last_edu_audio_id"] = music_item["id"]
         state_lib.save_state(st)
