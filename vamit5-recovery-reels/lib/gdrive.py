@@ -116,3 +116,9 @@ def pick_sequence(items: list, last_id: str | None, count: int):
     while len(result) < count:
         result.extend(ordered)
     return result[:count]
+
+
+def filter_by_category(items: list, category: str) -> list:
+    """Vraca samo fajlove cije ime POCINJE sa datom kategorijom
+    (npr. 'kettlebell' hvata 'kettlebell_01.mp4', 'kettlebell-2.mov'...)."""
+    return [i for i in items if i["name"].lower().startswith(category.lower())]
