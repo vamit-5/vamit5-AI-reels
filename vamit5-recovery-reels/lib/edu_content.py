@@ -279,3 +279,47 @@ def split_into_segments(sentences: list[str], segment_count: int) -> list[dict]:
         segments.append({"start": start, "end": end, "video_prompt_english": prompt})
 
     return segments
+
+
+# ===== KATEGORIJE ZA GOTOV DRIVE POOL (novi tok, bez uzivo generisanja) =====
+# Ove kategorije MORAJU se poklapati sa pocetkom imena fajlova u
+# GDRIVE_FOLDER_AI_CLIPS folderu (npr. "kettlebell_01.mp4"). Kad Claude
+# analizira sadrzaj segmenta, bira NAJBOLJU kategoriju sa ove liste --
+# ne pise vise slobodan opis scene (klipovi su vec gotovi).
+CLIP_CATEGORIES = {
+    "kettlebell": "pominje se kettlebell, swing, zamah sa tegom",
+    "squat": "pominje se cucanj, duboka pozicija nogu",
+    "jump": "pominje se skok, eksplozivan pokret, brzina",
+    "burpee": "pominje se burpee ili kombinovan pokret celog tela",
+    "plank": "pominje se drzanje pozicije, izdrzljivost, stabilnost",
+    "heart": "pominje se srce, puls, kardio, VO2 max",
+    "mitochondria": "pominje se energija na celijskom nivou, mitohondrije, gorivo tela",
+    "cns": "pominje se mozak, nervni sistem, mentalna kontrola, fokus",
+    "tired": "opisuje se svakodnevni umor, tezak fizicki posao, iscrpljenost obicnog coveka",
+    "confused": "opisuje se zbunjenost, neodlucnost, previse opcija/aplikacija",
+    "closeup": "opisuje se odlucnost, fokus, emocija, unutrasnja borba",
+    "group": "pominje se zajednica, drugi ljudi, pripadnost, zajednicki trening",
+}
+
+_CATEGORY_SYSTEM = """Ti biras NAJBOLJU kategoriju scene za kratak isecak
+skripte, sa OVE TACNE liste (ne izmisljaj nove, ne opisuj slobodno):
+
+{category_list}
+
+Vrati ISKLJUCIVO jednu reč -- tacno ime kategorije sa liste iznad, bez
+ikakvog dodatnog teksta, navodnika ili objasnjenja. Ako nijedna kategorija
+ne odgovara ocigledno, izaberi "closeup" ili "group" kao najbolji opsti
+izbor (nikad ne izostavljaj odgovor)."""
+
+
+def pick_category_for_segment(segment_text: str) -> str:
+    category_list = "\n".join(f"- {k}: {v}" for k, v in CLIP_CATEGORIES.items())
+    system = _CATEGORY_SYSTEM.format(category_list=category_list)
+    try:
+        raw = _anthropic_call(system, segment_text, max_tokens=20)
+        category = raw.strip().lower().strip('."\'')
+        if category in CLIP_CATEGORIES:
+            return category
+    except Exception as e:
+        print(f"UPOZORENJE: biranje kategorije nije uspelo ({e}), koristim rezervnu.")
+    return random.choice(["closeup", "group"])
