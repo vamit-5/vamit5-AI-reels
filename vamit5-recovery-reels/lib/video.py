@@ -1,7 +1,7 @@
 """
 Dvokorakno generisanje video epizode preko Higgsfield Cloud API-ja:
 1. Higgsfield Soul (text-to-image) generise sliku atlete iz teksta
-2. Higgsfield DoP Lite (image-to-video) animira tu sliku u kratak pokret
+2. Higgsfield DoP Standard (image-to-video) animira tu sliku u kratak pokret
 
 Auth: dva odvojena header-a "hf-api-key" i "hf-secret".
 Odgovori imaju ugnjezdenu strukturu: {"id":..., "jobs":[{"id":..., "status":...,
@@ -19,12 +19,12 @@ HIGGSFIELD_API_KEY = os.environ["HIGGSFIELD_API_KEY"].strip()
 HIGGSFIELD_API_SECRET = os.environ["HIGGSFIELD_API_SECRET"].strip()
 
 SOUL_URL = "https://platform.higgsfield.ai/v1/text2image/soul"
-DOP_STANDARD_URL = "https://platform.higgsfield.ai/higgsfield-ai/dop/preview"
+DOP_STANDARD_URL = "https://platform.higgsfield.ai/higgsfield-ai/dop/standard"
 STATUS_URL_TMPL = "https://platform.higgsfield.ai/requests/{request_id}/status"
 
 POLL_INTERVAL_SECONDS = 8
 MAX_POLL_MINUTES = 18
-MAX_SUBMIT_RETRIES = 2  # ako istekne vreme, probaj ponovo od nule (nov seed)
+MAX_SUBMIT_RETRIES = 2  # ako istekne vreme ili "failed" status, probaj ponovo od nule (nov seed)
 
 
 def _headers():
@@ -90,7 +90,7 @@ def _wait_for_job(submit_response):
         return job
 
     # Higgsfield koristi razlicita imena polja na razlicitim endpoint-ima
-    # (Soul vraca "id", DoP Lite vraca "request_id") -- zato prvo probamo
+    # (Soul vraca "id", DoP vraca "request_id") -- zato prvo probamo
     # da uzmemo "status_url" direktno (uvek prisutan, najpouzdaniji nacin),
     # a tek ako ga nema, sastavljamo URL rucno iz id/request_id polja
     status_url = submit_response.get("status_url")
@@ -108,8 +108,15 @@ def _wait_for_job(submit_response):
         st = job.get("status")
         if st == "completed":
             return job
-        if st in ("failed", "nsfw", "error"):
-            raise RuntimeError(f"Higgsfield generisanje nije uspelo: {job}")
+        if st == "nsfw":
+            raise RuntimeError(f"Higgsfield generisanje odbijeno (NSFW filter): {job}")
+        if st in ("failed", "error"):
+            # generacijska greska (ne HTTP greska) -- moze biti privremena
+            # (npr. Higgsfield interni glitch), tretiramo je kao TimeoutError
+            # da je isti retry mehanizam u _generate_image/_generate_video_from_image
+            # pokusa ponovo (sa novim seed-om) umesto da odmah odustane
+            print(f"UPOZORENJE: Higgsfield generisanje neuspesno (status={st}), tretiram kao privremeno: {job}")
+            raise TimeoutError(f"Higgsfield generisanje nije uspelo (status={st})")
         # queued / in_progress -> nastavi da ceka
     raise TimeoutError("Higgsfield generisanje je isteklo (timeout)")
 
@@ -167,9 +174,9 @@ def _generate_image(image_prompt: str, rng) -> str:
             image_job = _wait_for_job(submit_image)
             return _extract_url_from_job(image_job)
         except TimeoutError:
-            print(f"UPOZORENJE: generisanje slike isteklo, pokusaj {attempt + 1}/{MAX_SUBMIT_RETRIES + 1}")
+            print(f"UPOZORENJE: generisanje slike isteklo/neuspesno, pokusaj {attempt + 1}/{MAX_SUBMIT_RETRIES + 1}")
             continue
-    raise RuntimeError("Higgsfield generisanje slike nije uspelo posle vise pokusaja (timeout)")
+    raise RuntimeError("Higgsfield generisanje slike nije uspelo posle vise pokusaja")
 
 
 def _generate_video_from_image(video_prompt: str, image_url: str, rng) -> str:
@@ -185,9 +192,9 @@ def _generate_video_from_image(video_prompt: str, image_url: str, rng) -> str:
             video_job = _wait_for_job(submit_video)
             return _extract_url_from_job(video_job)
         except TimeoutError:
-            print(f"UPOZORENJE: generisanje videa isteklo, pokusaj {attempt + 1}/{MAX_SUBMIT_RETRIES + 1}")
+            print(f"UPOZORENJE: generisanje videa isteklo/neuspesno, pokusaj {attempt + 1}/{MAX_SUBMIT_RETRIES + 1}")
             continue
-    raise RuntimeError("Higgsfield generisanje videa nije uspelo posle vise pokusaja (timeout)")
+    raise RuntimeError("Higgsfield generisanje videa nije uspelo posle vise pokusaja")
 
 
 def generate_episode_video(image_prompt: str, video_prompt: str, out_path: str) -> str:
