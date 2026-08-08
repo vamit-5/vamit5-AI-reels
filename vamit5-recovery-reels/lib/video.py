@@ -19,7 +19,7 @@ HIGGSFIELD_API_KEY = os.environ["HIGGSFIELD_API_KEY"].strip()
 HIGGSFIELD_API_SECRET = os.environ["HIGGSFIELD_API_SECRET"].strip()
 
 SOUL_URL = "https://platform.higgsfield.ai/v1/text2image/soul"
-DOP_LITE_URL = "https://platform.higgsfield.ai/higgsfield-ai/dop/lite"
+DOP_STANDARD_URL = "https://platform.higgsfield.ai/higgsfield-ai/dop/standard"
 STATUS_URL_TMPL = "https://platform.higgsfield.ai/requests/{request_id}/status"
 
 POLL_INTERVAL_SECONDS = 8
@@ -174,7 +174,7 @@ def _generate_image(image_prompt: str, rng) -> str:
 
 def _generate_video_from_image(video_prompt: str, image_url: str, rng) -> str:
     for attempt in range(MAX_SUBMIT_RETRIES + 1):
-        submit_video = _post(DOP_LITE_URL, {
+        submit_video = _post(DOP_STANDARD_URL, {
             "prompt": video_prompt,
             "motions": [],
             "image_url": image_url,
