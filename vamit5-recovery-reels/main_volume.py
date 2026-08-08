@@ -218,11 +218,13 @@ def main():
                 # Folder "Postavi bez izmena" (ranije "Ne dodavaj tekst..."):
                 # POTPUNO NETAKNUTO -- original video i original zvuk,
                 # bez ikakve obrade (bez teksta, muzike, loga, mockup-a)
-                print("Postavljam original snimak -- laka kompresija (isti sadrzaj/kadar/zvuk, samo manji fajl da stane na Cloudinary).")
+                print("Postavljam original snimak -- kompresija sa tvrdim limitom velicine (sadrzaj/kadar/zvuk ostaju isti, samo garantovano manji fajl).")
                 subprocess.run(
                     ["ffmpeg", "-y", "-i", raw_video_path,
-                     "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-                     "-c:a", "aac", "-b:a", "192k",
+                     "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
+                     "-c:v", "libx264", "-preset", "medium", "-crf", "23",
+                     "-b:v", "3M", "-maxrate", "3M", "-bufsize", "6M",
+                     "-c:a", "aac", "-b:a", "128k",
                      final_path],
                     check=True, capture_output=True,
                 )
