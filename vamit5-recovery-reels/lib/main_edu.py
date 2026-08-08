@@ -2,15 +2,17 @@
 Glavni ulazni fajl za EDUKATIVNE (AI anatomija) reels-e. Pokrece ga
 GitHub Actions, odvojen raspored od main.py/main_volume.py.
 
-NOVA VERZIJA (bez uzivo Higgsfield API poziva):
+VRACENO na UZIVO Higgsfield generisanje (DoP Standard, bolji kvalitet od
+Lite), po izricitom zahtevu -- gotovi Drive klipovi nisu davali dovoljno
+preciznu vezu sa sadrzajem. Skripte za ovaj tok dolaze ISKLJUCIVO iz
+lib/edu_dop_scripts.py, potpuno odvojeno od ostalih pool-ova.
+
 1. Zauzmi lock (deljen sa ostalim tokovima)
-2. Odaberi sledecu edukativnu skriptu (rotacija u krug)
+2. Odaberi sledecu skriptu (rotacija u krug, lib/edu_dop_scripts.py)
 3. ElevenLabs generise audio (tacan tekst, bez izmena)
-4. Claude API SAMO deli naraciju na segmente (koliko treba, na osnovu
-   duzine audija) -- vise NE generise video promptove
-5. Za svaki segment, BIRA gotov klip iz Drive "AI klipovi" foldera
-   (unapred napravljeni preko pravog higgsfield.ai sajta), bez ponavljanja
-   klipova UNUTAR ovog istog Reel-a
+4. Claude API deli naraciju na segmente I smislja video prompt za svaki
+   (doslovno prati sta se u tom delu prica)
+5. Higgsfield DoP Standard generise sliku+video za svaki segment uzivo
 6. Svi segmenti se spajaju u jedan kontinuiran silent video tacne duzine
 7. Sa Google Drive-a (glavni folder) preuzmi sledecu muziku
 8. ffmpeg dodaje caption segmente + muzika (ducked) + logo + CTA mockup
@@ -27,11 +29,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib import state as state_lib
 from lib import theme, tts, gdrive, assemble, edu_content, edu_video, cloudinary_upload, instagram, lock
-from lib.edu_scripts import EDU_SCRIPTS
+from lib.edu_dop_scripts import EDU_DOP_SCRIPTS
 from lib.assemble import _split_sentences
 
 HASHTAGS = "#vamit5 #kettlebell #trening #disciplina #fitness"
-AI_CLIPS_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_AI_CLIPS", "")
 
 
 def _in_allowed_window() -> bool:
@@ -52,11 +53,9 @@ def main():
         print("Van dozvoljenog vremenskog prozora -- tiho izlazim (bez objave).")
         return
 
-    if not AI_CLIPS_FOLDER_ID:
+    if not EDU_DOP_SCRIPTS:
         raise RuntimeError(
-            "GDRIVE_FOLDER_AI_CLIPS nije podesen -- prvo napravi Drive folder "
-            "za gotove AI klipove, podeli ga sa service account-om i dodaj "
-            "GitHub secret."
+            "lib/edu_dop_scripts.py je prazan -- prvo dodaj skripte pre pokretanja."
         )
 
     acquired = lock.try_acquire()
@@ -67,7 +66,7 @@ def main():
     try:
         st = state_lib.load_state()
 
-        episode = theme.select_from_pool(EDU_SCRIPTS, st.get("next_edu_script_index", 0))
+        episode = theme.select_from_pool(EDU_DOP_SCRIPTS, st.get("next_edu_script_index", 0))
         print(f"Edu skripta #{episode['script_index']}: {episode['hook_serbian'][:60]}...")
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -77,15 +76,11 @@ def main():
 
             sentences = _split_sentences(episode["narration_serbian"])
             target_segment_count = edu_content.compute_segment_count(audio_dur)
-            boundaries = edu_content.get_segment_boundaries(sentences, target_segment_count)
-            print(f"Podeljeno na {len(boundaries)} segmenata (klipovi iz Drive pool-a)")
+            segments = edu_content.split_into_segments(sentences, target_segment_count)
+            print(f"Podeljeno na {len(segments)} AI video segmenata (DoP Standard)")
 
             base_video_path = os.path.join(tmp, "edu_base.mp4")
-            _, new_last_video_id = edu_video.build_segmented_video(
-                sentences, boundaries, audio_dur,
-                AI_CLIPS_FOLDER_ID, st.get("last_edu_video_id"),
-                base_video_path, tmp,
-            )
+            edu_video.build_segmented_video(sentences, segments, audio_dur, base_video_path, tmp)
 
             _, audios = gdrive.list_files()
             music_item = None
@@ -110,7 +105,6 @@ def main():
             print(f"Objavljeno na Instagram, post id: {post_id}")
 
         st["next_edu_script_index"] = episode["script_index"] + 1
-        st["last_edu_video_id"] = new_last_video_id
         if music_item:
             st["last_edu_audio_id"] = music_item["id"]
         state_lib.save_state(st)
