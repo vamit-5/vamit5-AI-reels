@@ -2,8 +2,8 @@
   "next_script_index": 0,
   "last_video_id": null,
   "last_audio_id": null,
-  "next_edu_script_index": 4,
-  "last_edu_audio_id": "15COeHZWXsToM5rE17fGTOzzhpQWeAENM",
+  "next_edu_script_index": 5,
+  "last_edu_audio_id": "1Qk_RrY8u-37Sng_U0nE9DoOZQvvEDJvi",
   "last_volume_video_id": "12xHRD0AVyi63XDAGuo-T2jt00PDE0SIf",
   "last_volume_audio_id": "1Qk_RrY8u-37Sng_U0nE9DoOZQvvEDJvi",
   "next_volume_caption_index": 33,
@@ -16,9 +16,10 @@
     "mute_notext": "1kuv2xeVGJ6A-wb9wBmJqOKQel3d-Wofm"
   },
   "last_edu_video_by_category": {
-    "group": "1ven-15BugGHZaIDsZATNwrgv8lFrgyCX",
-    "closeup": "1HSfRaT1bTWy1W1x0AtU5UXxI35nIozC4",
+    "group": "19jTrglfSPn1Qte_OYNuTbItXpvOdnlCA",
+    "closeup": "1K3qJQzOskWw79QYpVVyrxLek6io43pW_",
     "tired": "1hmwNk7eGKvsoRRD_Y8XDF-O9EvnndYHN",
-    "kettlebell": "1NKnawityiVIQVmyK4JdAQkxhifEF3i5g"
+    "kettlebell": "1NKnawityiVIQVmyK4JdAQkxhifEF3i5g",
+    "cns": "1K3qJQzOskWw79QYpVVyrxLek6io43pW_"
   }
 }
