@@ -19,7 +19,7 @@ HIGGSFIELD_API_KEY = os.environ["HIGGSFIELD_API_KEY"].strip()
 HIGGSFIELD_API_SECRET = os.environ["HIGGSFIELD_API_SECRET"].strip()
 
 SOUL_URL = "https://platform.higgsfield.ai/v1/text2image/soul"
-DOP_STANDARD_URL = "https://platform.higgsfield.ai/higgsfield-ai/dop/standard"
+DOP_STANDARD_URL = "https://platform.higgsfield.ai/higgsfield-ai/dop/preview"
 STATUS_URL_TMPL = "https://platform.higgsfield.ai/requests/{request_id}/status"
 
 POLL_INTERVAL_SECONDS = 8
