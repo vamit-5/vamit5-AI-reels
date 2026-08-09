@@ -16,7 +16,6 @@ da zvuci neprirodno/ubrzano-komicno.
 """
 import json
 import os
-import re
 import subprocess
 import time
 import urllib.request
@@ -45,40 +44,20 @@ def _probe_duration(path: str) -> float:
 # Audio tag(ovi) koji se dodaju SAMO u ono sto se salje ElevenLabs-u (rezijska
 # uputstva, model ih NE izgovara) -- ne diraju tekst koji ide u caption/
 # Instagram opis, jer se dodaju ovde, unutar TTS poziva, ne u sam narration_text.
-# Rotiraju se KROZ CEO tekst (ne samo na pocetku) da energija ne opadne
-# posle prvih par sekundi na duzim skriptama.
-AUDIO_TAGS = ["[energetic]", "[enthusiastic]", "[upbeat]", "[lively]"]
-
-
-def _inject_audio_tags(text: str) -> str:
-    """Oznaka se stavlja SAMO na svaku 4. recenicu (ne na svaku!) -- previse
-    oznaka zaredom teralo je model da pravi kratku pauzu/predah pre svake,
-    sto je usporavalo govor i pravilo velike razmake izmedju recenica
-    (i posledicno kvarilo sinhronizaciju captiona). Rec je izabrana da
-    znaci "brzo/zivo", ne "dramaticno" (izbegava rec "intense"/"powerful"
-    koje vise pozivaju na teatralnu pauzu)."""
-    sentences = re.findall(r"[^.!?]+[.!?]?", text)
-    sentences = [s.strip() for s in sentences if s.strip()]
-    tagged = []
-    for i, s in enumerate(sentences):
-        if i % 4 == 0:
-            tag = AUDIO_TAGS[(i // 4) % len(AUDIO_TAGS)]
-            tagged.append(f"{tag} {s}")
-        else:
-            tagged.append(s)
-    return " ".join(tagged)
-
-
 def _synthesize_at_speed(text: str, out_path: str, speed: float) -> str:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
-    tagged_text = _inject_audio_tags(text)
+    # NE koristimo vise "audio tags" ([excited], [energetic] itd.) -- ElevenLabs
+    # sama dokumentuje da su na v3 NEPOUZDANI ("model might ignore them, or
+    # read them out loud literally, or cause pauses/artifacts"). Umesto toga,
+    # energija se kontrolise ISKLJUCIVO preko voice_settings (stability/style),
+    # sto je pouzdaniji, predvidljiviji mehanizam.
     payload = {
-        "text": tagged_text,
+        "text": text,
         "model_id": "eleven_v3",
         "voice_settings": {
-            "stability": 0.25,   # malo vise od pre (0.15) -- previse nisko je doprinosilo neizvesnim pauzama
+            "stability": 0.45,   # umerena vrednost -- prenisko (0.15-0.25) je pravilo neizvesne pauze/artefakte
             "similarity_boost": 0.8,
-            "style": 0.85,       # jos malo vise energije/karaktera da nadoknadi manje ucestale oznake
+            "style": 0.85,       # visoka vrednost = izrazajniji/energicniji ton (glavni "energija" kontroler sad kad nema tag-ova)
             "use_speaker_boost": True,
             "speed": speed,
         },
