@@ -1,11 +1,11 @@
 name: VAMIT-5 Edukativni Reels (AI anatomija)
 
 on:
-  schedule:
-    # 2x dnevno, razmaknuto od obicnog reels rasporeda (koji je 08h/18h
-    # po srpskom vremenu) -- ovde 12h i 20h po srpskom letnjem vremenu (UTC+2)
-    - cron: "0 10 * * *"
-    - cron: "0 18 * * *"
+  # PRIVREMENO ISKLJUCEN automatski raspored -- Higgsfield DoP Standard
+  # krediti su iscrpljeni ("not_enough_credits" greska), i svaki neuspeo
+  # pokusaj drzi zajednicki lock 15+ minuta, blokirajuci Volumen Reels u
+  # medjuvremenu. Ostaje samo rucno pokretanje (workflow_dispatch) dok se
+  # kredit situacija ne razjasni sa Higgsfield podrskom.
   workflow_dispatch: {}
 
 permissions:
