@@ -47,16 +47,25 @@ def _probe_duration(path: str) -> float:
 # Instagram opis, jer se dodaju ovde, unutar TTS poziva, ne u sam narration_text.
 # Rotiraju se KROZ CEO tekst (ne samo na pocetku) da energija ne opadne
 # posle prvih par sekundi na duzim skriptama.
-AUDIO_TAGS = ["[excited]", "[intense]", "[powerful]", "[passionate]", "[determined]", "[energetic]"]
+AUDIO_TAGS = ["[energetic]", "[enthusiastic]", "[upbeat]", "[lively]"]
 
 
 def _inject_audio_tags(text: str) -> str:
+    """Oznaka se stavlja SAMO na svaku 4. recenicu (ne na svaku!) -- previse
+    oznaka zaredom teralo je model da pravi kratku pauzu/predah pre svake,
+    sto je usporavalo govor i pravilo velike razmake izmedju recenica
+    (i posledicno kvarilo sinhronizaciju captiona). Rec je izabrana da
+    znaci "brzo/zivo", ne "dramaticno" (izbegava rec "intense"/"powerful"
+    koje vise pozivaju na teatralnu pauzu)."""
     sentences = re.findall(r"[^.!?]+[.!?]?", text)
     sentences = [s.strip() for s in sentences if s.strip()]
     tagged = []
     for i, s in enumerate(sentences):
-        tag = AUDIO_TAGS[i % len(AUDIO_TAGS)]
-        tagged.append(f"{tag} {s}")
+        if i % 4 == 0:
+            tag = AUDIO_TAGS[(i // 4) % len(AUDIO_TAGS)]
+            tagged.append(f"{tag} {s}")
+        else:
+            tagged.append(s)
     return " ".join(tagged)
 
 
@@ -67,9 +76,9 @@ def _synthesize_at_speed(text: str, out_path: str, speed: float) -> str:
         "text": tagged_text,
         "model_id": "eleven_v3",
         "voice_settings": {
-            "stability": 0.15,   # jos nize = maksimalno izrazajan, dinamican ton
+            "stability": 0.25,   # malo vise od pre (0.15) -- previse nisko je doprinosilo neizvesnim pauzama
             "similarity_boost": 0.8,
-            "style": 0.8,        # jos vise = jos vise emocije/energije/karaktera
+            "style": 0.85,       # jos malo vise energije/karaktera da nadoknadi manje ucestale oznake
             "use_speaker_boost": True,
             "speed": speed,
         },
