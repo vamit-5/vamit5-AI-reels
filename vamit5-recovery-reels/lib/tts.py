@@ -55,9 +55,9 @@ def _synthesize_at_speed(text: str, out_path: str, speed: float) -> str:
         "text": text,
         "model_id": "eleven_v3",
         "voice_settings": {
-            "stability": 0.45,   # umerena vrednost -- prenisko (0.15-0.25) je pravilo neizvesne pauze/artefakte
-            "similarity_boost": 0.8,
-            "style": 0.85,       # visoka vrednost = izrazajniji/energicniji ton (glavni "energija" kontroler sad kad nema tag-ova)
+            "stability": 0.10,   # apsolutni minimum -- pauze su ranije verovatno bile od tag-ova, ne (samo) od ovog; sad kad tag-ova nema, probamo krajnost
+            "similarity_boost": 0.75,  # blago spusteno da damo modelu jos malo vise slobode za izrazajnost
+            "style": 1.0,        # apsolutni maksimum
             "use_speaker_boost": True,
             "speed": speed,
         },
